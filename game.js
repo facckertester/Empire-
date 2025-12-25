@@ -1125,6 +1125,14 @@ let resourceTooltipCache = {
 };
 let resourceTooltipTimeout = null;
 
+// Кэш статуса работы зданий (для визуальных индикаторов)
+const buildingWorkStatus = new Map(); // Map<instanceId, {working: boolean, reason?: string}>
+const buildingStatusCache = new Map(); // Map<instanceId, {working: boolean, reason?: string}> - предыдущий статус для сравнения
+const buildingElementsCache = new WeakMap(); // WeakMap<HTMLElement, instanceId> - кэш DOM элементов
+let lastWorkStatusUpdate = 0;
+const WORK_STATUS_UPDATE_INTERVAL = 1000; // Обновляем статус раз в секунду
+let gridElementCache = null; // Кэш элемента grid для избежания повторных querySelector
+
 // Установка размеров зданий по умолчанию
 function setBuildingSizes() {
     buildings.forEach(building => {
@@ -1322,6 +1330,12 @@ function loadGame() {
         // Восстанавливаем здания на карте
         if (saveData.mapBuildings && Array.isArray(saveData.mapBuildings)) {
             gameMap.buildings = saveData.mapBuildings;
+            
+            // Сбрасываем кэши при загрузке
+            gridElementCache = null;
+            resourceStatsCache = null;
+            buildingStatusCache.clear();
+            buildingWorkStatus.clear();
             updateOccupiedTiles();
         }
         
@@ -1362,6 +1376,12 @@ function resetGame() {
     // Очищаем здания
     gameState.buildings = {};
     gameMap.buildings = [];
+    
+    // Сбрасываем кэши при сбросе игры
+    gridElementCache = null;
+    resourceStatsCache = null;
+    buildingStatusCache.clear();
+    buildingWorkStatus.clear();
     
     // Сбрасываем игровое время
     gameState.gameTime = 0;
@@ -1523,10 +1543,47 @@ function init() {
     // Обновляем интерфейс с учетом языка
     updateUI();
     
-    // Обработчики для клавиши Ctrl (для показа бейджей)
+    // Обработчики для клавиши Ctrl (для показа бейджей) и Esc (для отмены строительства)
+    // Горячие клавиши
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Control') {
             isCtrlPressed = true;
+        }
+        // Отмена строительства по Esc
+        if (e.key === 'Escape' && gameMap.buildingToPlace) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelBuildingPlacement();
+        }
+        
+        // Горячие клавиши для эр (1-6)
+        if (!e.ctrlKey && !e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '6') {
+            const era = e.key === '6' ? 'citadel' : parseInt(e.key);
+            const tabBtn = document.querySelector(`.tab-btn[data-era="${era}"]`);
+            if (tabBtn) {
+                e.preventDefault();
+                tabBtn.click();
+            }
+        }
+        
+        // Сохранение: Ctrl+S
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            saveGame();
+            updateInfoPanel(t('msg.progressLoaded'));
+        }
+        
+        // Меню: M или F10
+        if ((e.key === 'm' || e.key === 'M' || e.key === 'F10') && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            const menuBtn = document.getElementById('game-menu-btn');
+            if (menuBtn) {
+                menuBtn.click();
+            } else {
+                setupGameMenu();
+                const menu = document.getElementById('game-menu');
+                if (menu) menu.style.display = 'flex';
+            }
         }
     });
     
@@ -1548,6 +1605,9 @@ function init() {
 function renderMap() {
     const mapContainer = document.getElementById('game-map');
     mapContainer.innerHTML = '';
+    
+    // Сбрасываем кэш grid элемента при перерисовке карты
+    gridElementCache = null;
     
     // Обновляем занятые клетки
     updateOccupiedTiles();
@@ -1922,7 +1982,11 @@ function getGroupOutlineSegments(group) {
 
 // Рендеринг зданий на карте (оптимизировано с кэшем + выделение групп)
 function renderMapBuildings() {
-    const grid = document.querySelector('.map-grid');
+    // Используем кэшированный элемент grid
+    if (!gridElementCache) {
+        gridElementCache = document.querySelector('.map-grid');
+    }
+    const grid = gridElementCache;
     if (!grid) return;
     
     // Очищаем старые здания и выделения (кроме сетки)
@@ -2013,6 +2077,18 @@ function renderMapBuildings() {
         if (isSelected) {
             buildingElement.classList.add('selected');
         }
+        
+        // Добавляем индикатор статуса работы
+        const workStatus = buildingWorkStatus.get(building.instanceId);
+        if (workStatus) {
+            if (workStatus.working) {
+                buildingElement.classList.add('building-working');
+            } else {
+                buildingElement.classList.add('building-not-working');
+                buildingElement.title = t('ui.notWorking') + (workStatus.reason ? ': ' + workStatus.reason : '');
+            }
+        }
+        
         buildingElement.style.left = `${building.x * 40}px`;
         buildingElement.style.top = `${building.y * 40}px`;
         buildingElement.style.width = `${width * 40}px`;
@@ -2057,7 +2133,13 @@ function renderMapBuildings() {
                 e.stopPropagation();
                 return;
             }
-            e.stopPropagation();
+            
+            // Если выбрано здание для постройки, не останавливаем распространение события
+            // чтобы клик мог пройти к тайлу и обработаться там
+            if (!gameMap.buildingToPlace) {
+                e.stopPropagation();
+            }
+            
             // Передаем координаты здания, сам объект здания и событие
             handleBuildingClick(building, e);
         });
@@ -2093,6 +2175,110 @@ function renderMapBuildings() {
     
     // Обновляем визуальное выделение после рендеринга
     updateBuildingSelection();
+    
+    // Сбрасываем кэш статусов после перерисовки зданий
+    // (так как DOM элементы были пересозданы)
+    buildingStatusCache.clear();
+}
+
+// Обновление визуальных индикаторов статуса зданий (оптимизировано)
+function updateBuildingStatusIndicators() {
+    // Используем кэшированный элемент grid
+    if (!gridElementCache) {
+        gridElementCache = document.querySelector('.map-grid');
+    }
+    const grid = gridElementCache;
+    if (!grid) return;
+    
+    // Используем DocumentFragment для батчинга операций (если нужно)
+    let hasChanges = false;
+    
+    // Получаем все здания один раз
+    const buildings = grid.querySelectorAll('.map-building');
+    
+    // Оптимизация: обновляем только те здания, статус которых изменился
+    buildings.forEach(buildingEl => {
+        const instanceId = parseInt(buildingEl.dataset.instanceId);
+        if (isNaN(instanceId)) return;
+        
+        const workStatus = buildingWorkStatus.get(instanceId);
+        const previousStatus = buildingStatusCache.get(instanceId);
+        
+        // Проверяем, изменился ли статус
+        const statusChanged = !previousStatus || 
+                             previousStatus.working !== workStatus?.working ||
+                             previousStatus.reason !== workStatus?.reason;
+        
+        if (!statusChanged && workStatus) {
+            // Статус не изменился, пропускаем обновление
+            return;
+        }
+        
+        hasChanges = true;
+        
+        // Обновляем кэш статуса
+        if (workStatus) {
+            buildingStatusCache.set(instanceId, {
+                working: workStatus.working,
+                reason: workStatus.reason || ''
+            });
+        }
+        
+        // Удаляем старые классы статуса только если они есть
+        const hasWorking = buildingEl.classList.contains('building-working');
+        const hasNotWorking = buildingEl.classList.contains('building-not-working');
+        
+        if (workStatus) {
+            if (workStatus.working) {
+                // Добавляем класс только если его нет
+                if (!hasWorking) {
+                    buildingEl.classList.add('building-working');
+                }
+                // Удаляем класс неработающего только если он есть
+                if (hasNotWorking) {
+                    buildingEl.classList.remove('building-not-working');
+                }
+                // Удаляем title если он был установлен для неработающего здания
+                if (buildingEl.title && buildingEl.title.startsWith(t('ui.notWorking'))) {
+                    buildingEl.removeAttribute('title');
+                }
+            } else {
+                // Добавляем класс только если его нет
+                if (!hasNotWorking) {
+                    buildingEl.classList.add('building-not-working');
+                }
+                // Удаляем класс работающего только если он есть
+                if (hasWorking) {
+                    buildingEl.classList.remove('building-working');
+                }
+                // Обновляем title только если он изменился
+                const newTitle = t('ui.notWorking') + (workStatus.reason ? ': ' + workStatus.reason : '');
+                if (buildingEl.title !== newTitle) {
+                    buildingEl.title = newTitle;
+                }
+            }
+        } else {
+            // Нет статуса - удаляем все классы статуса
+            if (hasWorking) buildingEl.classList.remove('building-working');
+            if (hasNotWorking) buildingEl.classList.remove('building-not-working');
+        }
+    });
+    
+    // Если зданий нет в DOM, но есть в кэше статуса - очищаем кэш
+    if (buildings.length === 0 && buildingStatusCache.size > 0) {
+        // Очищаем кэш статусов для несуществующих зданий
+        const existingIds = new Set();
+        buildings.forEach(el => {
+            const id = parseInt(el.dataset.instanceId);
+            if (!isNaN(id)) existingIds.add(id);
+        });
+        
+        buildingStatusCache.forEach((_, id) => {
+            if (!existingIds.has(id)) {
+                buildingStatusCache.delete(id);
+            }
+        });
+    }
 }
 
 // Отслеживание кликов для выбора зданий
@@ -2107,8 +2293,10 @@ let clickState = {
 // Обработка клика по зданию (вызывается из обработчика здания)
 function handleBuildingClick(building, event = null) {
     if (gameMap.buildingToPlace) {
-        // Если выбрано здание для постройки - размещаем его
-        placeBuilding(building.x, building.y, gameMap.buildingToPlace);
+        // Если выбрано здание для постройки - нельзя строить на уже занятом месте
+        // Игнорируем клик по уже построенному зданию, чтобы не мешать строительству
+        // Пользователь должен кликнуть на свободное место для постройки
+        // НЕ вызываем stopPropagation, чтобы клик мог пройти дальше к тайлу
         return;
     }
     
@@ -2134,24 +2322,32 @@ function handleTileClick(x, y, event = null) {
     if (building) {
         processBuildingSelection(building, event);
     } else {
-        // Если кликнули по пустому месту - просто снимаем выбор (перемещение теперь через drag)
+        // Если кликнули по пустому месту - снимаем выбор зданий, но не отменяем строительство
+        // Строительство отменяется только по Esc
         if (clickState.timeout) {
             clearTimeout(clickState.timeout);
             clickState.timeout = null;
         }
         
-        gameMap.buildingToPlace = null;
+        // Не очищаем buildingToPlace - здание остается выбранным для строительства
         gameMap.selectedBuilding = null;
         gameMap.selectedBuildings = [];
         gameMap.selectionMode = 'single';
         
-        // Обновляем визуальное выделение (убираем выделение)
+        // Обновляем визуальное выделение (убираем выделение зданий)
         updateBuildingSelection();
         
         document.querySelectorAll('.building-item').forEach(item => {
             item.classList.remove('selected');
         });
-        updateInfoPanel(t('msg.selectBuilding'));
+        
+        // Если здание выбрано для строительства, показываем соответствующее сообщение
+        if (gameMap.buildingToPlace) {
+            updateInfoPanel(t('msg.selectLocation', { name: getBuildingName(gameMap.buildingToPlace.id) }));
+        } else {
+            updateInfoPanel(t('msg.selectBuilding'));
+        }
+        
         const panel = document.getElementById('selected-panel');
         if (panel) {
             panel.style.display = 'none';
@@ -2225,6 +2421,16 @@ function processBuildingSelection(building, event = null) {
     clickState.lastClickTile = null;
     clickState.clickCount = 0;
     clickState.lastBuildingId = null;
+}
+
+// Отмена строительства
+function cancelBuildingPlacement() {
+    gameMap.buildingToPlace = null;
+    clearPreview();
+    document.querySelectorAll('.building-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+    updateInfoPanel(t('msg.selectBuilding'));
 }
 
 // Кэш для hover (избегаем лишних обновлений)
@@ -3092,19 +3298,46 @@ function placeBuilding(x, y, building) {
     // Обновляем счетчик зданий
     gameState.buildings[building.id] = (gameState.buildings[building.id] || 0) + 1;
     
-    // Очищаем выбор и preview
-    gameMap.buildingToPlace = null;
+    // Сохраняем ID выбранного здания для восстановления (сохраняем объект здания, а не ссылку)
+    const buildingIdToRestore = gameMap.buildingToPlace ? gameMap.buildingToPlace.id : null;
+    
+    // Очищаем только preview, но не отменяем строительство
+    // Строительство остается активным до отмены по Esc
     clearPreview();
-    document.querySelectorAll('.building-item').forEach(item => {
-        item.classList.remove('selected');
-    });
     
     // Обновляем интерфейс (оптимизировано - не пересоздаем всю карту)
     updateOccupiedTiles();
     renderMapBuildings(); // Только здания, не всю сетку
     renderResources();
     renderBuildings(getCurrentEra()); // Обновляем список для обновления цен и подсветки
-    updateInfoPanel(t('msg.built', { name: getBuildingName(building.buildingId) }));
+    
+    // Восстанавливаем выделение здания для строительства после перерисовки
+    // ВАЖНО: восстанавливаем объект здания из массива buildings по ID
+    if (buildingIdToRestore) {
+        const buildingToRestore = buildings.find(b => b.id === buildingIdToRestore);
+        if (buildingToRestore) {
+            gameMap.buildingToPlace = buildingToRestore;
+            
+            // Восстанавливаем выделение в списке зданий
+            requestAnimationFrame(() => {
+                const selectedItem = document.querySelector(`.building-item[data-building-id="${buildingIdToRestore}"]`);
+                if (selectedItem) {
+                    selectedItem.classList.add('selected');
+                    // Убираем класс locked, если здание было выбрано для строительства
+                    selectedItem.classList.remove('locked');
+                }
+                
+                // Восстанавливаем preview, если есть lastHoverTile
+                if (lastHoverTile) {
+                    handleTileHover(lastHoverTile.x, lastHoverTile.y);
+                }
+            });
+        }
+    }
+    
+    // Показываем сообщение о постройке и напоминаем, что можно строить еще
+    // Строительство остается активным до отмены по Esc
+    updateInfoPanel(t('msg.built', { name: getBuildingName(building.id) }) + '. ' + t('msg.selectLocation', { name: getBuildingName(building.id) }));
     
     // Обновляем мини-карту реже (только при размещении зданий)
     if (gameMap.buildings.length % 5 === 0) {
@@ -3113,12 +3346,19 @@ function placeBuilding(x, y, building) {
     
     // Сохраняем прогресс после постройки
     saveGame();
+    
+    // Сбрасываем кэш статистики ресурсов при добавлении нового здания
+    resourceStatsCache = null;
 }
 
 // Выбор здания (оптимизировано с кэшем)
 // Обновление класса selected для зданий на карте
 function updateBuildingSelection() {
-    const grid = document.querySelector('.map-grid');
+    // Используем кэшированный элемент grid
+    if (!gridElementCache) {
+        gridElementCache = document.querySelector('.map-grid');
+    }
+    const grid = gridElementCache;
     if (!grid) return;
     
     // Убираем класс selected со всех зданий
@@ -3596,6 +3836,17 @@ function getTileName(type) {
 function renderResources() {
     let resourcesChanged = false;
     
+    // Вычисляем производство и потребление для предупреждений (с кэшированием)
+    const currentTime = performance.now();
+    let resourceStats = resourceStatsCache;
+    
+    // Обновляем статистику только если прошло достаточно времени
+    if (!resourceStats || (currentTime - lastResourceStatsUpdate) > RESOURCE_STATS_CACHE_INTERVAL) {
+        resourceStats = calculateResourceStats();
+        resourceStatsCache = resourceStats;
+        lastResourceStatsUpdate = currentTime;
+    }
+    
     // Обновляем все ресурсы
     Object.keys(resources).forEach(key => {
         const element = document.getElementById(`resource-${key}`);
@@ -3618,6 +3869,14 @@ function renderResources() {
                     resourcesChanged = true;
                 }
             }
+            
+            // Добавляем визуальное предупреждение о нехватке ресурсов
+            const stats = resourceStats[key];
+            if (stats && stats.balance < 0 && value < 1) {
+                element.parentElement.classList.add('resource-low');
+            } else {
+                element.parentElement.classList.remove('resource-low');
+            }
         }
     });
     
@@ -3625,6 +3884,69 @@ function renderResources() {
     if (resourcesChanged) {
         updateBuildingsAvailability();
     }
+}
+
+// Вычисление статистики по ресурсам (производство, потребление, баланс)
+function calculateResourceStats() {
+    const stats = {};
+    
+    // Инициализируем все ресурсы
+    Object.keys(resources).forEach(key => {
+        stats[key] = { production: 0, consumption: 0, balance: 0 };
+    });
+    
+    // Подсчитываем производство и потребление
+    gameMap.buildings.forEach(buildingInstance => {
+        const building = buildingsCache.get(buildingInstance.buildingId);
+        if (!building || !gameState.enabled[building.id]) return;
+        
+        // Проверка границ массива
+        if (buildingInstance.y < 0 || buildingInstance.y >= gameMap.height ||
+            buildingInstance.x < 0 || buildingInstance.x >= gameMap.width) {
+            return;
+        }
+        
+        const tile = gameMap.tiles[buildingInstance.y]?.[buildingInstance.x];
+        if (!tile) return;
+        
+        // Бонусы
+        const tileBonus = building.tileBonus && building.tileBonus[tile.type] ? 
+            building.tileBonus[tile.type] : 1;
+        const groupSize = getBuildingGroupSize(buildingInstance);
+        const neighborhoodBonus = 1 + ((groupSize - 1) * 0.05);
+        const totalBonus = tileBonus * neighborhoodBonus;
+        
+        // Проверяем, работает ли здание
+        const workStatus = buildingWorkStatus.get(buildingInstance.instanceId);
+        const isWorking = !workStatus || workStatus.working;
+        
+        if (isWorking) {
+            // Производство
+            if (building.produces) {
+                Object.entries(building.produces).forEach(([resource, rate]) => {
+                    if (stats[resource]) {
+                        stats[resource].production += rate * totalBonus;
+                    }
+                });
+            }
+            
+            // Потребление
+            if (building.consumes) {
+                Object.entries(building.consumes).forEach(([resource, rate]) => {
+                    if (stats[resource]) {
+                        stats[resource].consumption += rate;
+                    }
+                });
+            }
+        }
+    });
+    
+    // Вычисляем баланс
+    Object.keys(stats).forEach(key => {
+        stats[key].balance = stats[key].production - stats[key].consumption;
+    });
+    
+    return stats;
 }
 
 // Обновление доступности зданий (подсветка)
@@ -3718,16 +4040,18 @@ function createBuildingItem(building) {
     // При клике - выбираем для постройки
     item.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (canAfford(building)) {
-            // Убираем выделение с других
-            document.querySelectorAll('.building-item').forEach(i => {
-                i.classList.remove('selected');
-            });
-            item.classList.add('selected');
-            gameMap.buildingToPlace = building;
-            hideBuildingTooltip();
-            updateInfoPanel(t('msg.selectLocation', { name: getBuildingName(building.id) }));
-        }
+        // Позволяем выбирать здание даже если недостаточно ресурсов
+        // (чтобы можно было строить после получения ресурсов)
+        // Убираем выделение с других
+        document.querySelectorAll('.building-item').forEach(i => {
+            i.classList.remove('selected');
+        });
+        // Убираем класс locked при выборе здания
+        item.classList.remove('locked');
+        item.classList.add('selected');
+        gameMap.buildingToPlace = building;
+        hideBuildingTooltip();
+        updateInfoPanel(t('msg.selectLocation', { name: getBuildingName(building.id) }));
     });
     
     return item;
@@ -4122,19 +4446,23 @@ function getResourceIcon(resource) {
 // Используется в местах, где используется innerHTML
 function getResourceIconHTML(resource) {
     const emoji = getResourceIcon(resource);
-    const imagePath = `assets/icons/resources/${resource}.png`;
+    // Пробуем сначала SVG, потом PNG
+    const imagePathSvg = `assets/icons/resources/${resource}.svg`;
+    const imagePathPng = `assets/icons/resources/${resource}.png`;
     // Возвращаем HTML с изображением и эмодзи в качестве fallback
     // Если изображение не загрузится, показывается эмодзи
-    return `<span class="resource-icon-wrapper"><img src="${imagePath}" alt="${emoji}" class="resource-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" style="width: 1em; height: 1em; vertical-align: middle; display: inline-block; object-fit: contain;"><span class="resource-icon-fallback" style="display: none;">${emoji}</span></span>`;
+    return `<span class="resource-icon-wrapper"><img src="${imagePathSvg}" alt="${emoji}" class="resource-icon-img" onerror="this.src='${imagePathPng}'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='inline';};" style="width: 1em; height: 1em; vertical-align: middle; display: inline-block; object-fit: contain;"><span class="resource-icon-fallback" style="display: none;">${emoji}</span></span>`;
 }
 
 // Получить HTML для иконки здания с поддержкой изображений (fallback на эмодзи)
 function getBuildingIconHTML(icon, buildingId) {
     const emoji = icon || '🏗️';
-    const imagePath = `assets/icons/buildings/${buildingId}.png`;
+    // Пробуем сначала SVG, потом PNG
+    const imagePathSvg = `assets/icons/buildings/${buildingId}.svg`;
+    const imagePathPng = `assets/icons/buildings/${buildingId}.png`;
     // Возвращаем HTML с изображением и эмодзи в качестве fallback
     // Если изображение не загрузится, показывается эмодзи
-    return `<span class="building-icon-wrapper"><img src="${imagePath}" alt="${emoji}" class="building-icon-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" style="width: 1em; height: 1em; vertical-align: middle; display: inline-block; object-fit: contain;"><span class="building-icon-fallback" style="display: none;">${emoji}</span></span>`;
+    return `<span class="building-icon-wrapper"><img src="${imagePathSvg}" alt="${emoji}" class="building-icon-img" onerror="this.src='${imagePathPng}'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='inline';};" style="width: 1em; height: 1em; vertical-align: middle; display: inline-block; object-fit: contain;"><span class="building-icon-fallback" style="display: none;">${emoji}</span></span>`;
 }
 
 // Получить имя ресурса
@@ -4301,18 +4629,9 @@ function setupEventListeners() {
         });
     }
     
-    // Отмена выбора здания по ESC и ротация по R
+    // Ротация по R (отмена строительства обрабатывается в init)
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            gameMap.buildingToPlace = null;
-            gameMap.buildingRotation = 0;
-            clearPreview();
-            hideBuildingTooltip();
-            document.querySelectorAll('.building-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-            updateInfoPanel(t('msg.selectBuilding'));
-        }
+        // Esc обрабатывается в init, здесь только ротация
         // Ротация здания на R (или русская К)
         if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') {
             if (gameMap.buildingToPlace || (gameMap.draggingBuildings && gameMap.draggingBuildings.buildings.length > 0)) {
@@ -5055,6 +5374,12 @@ function startGameLoop() {
             gameState.lastRenderTime = currentTime;
         }
         
+        // Обновляем визуальные индикаторы статуса зданий реже - раз в секунду
+        if (currentTime - lastWorkStatusUpdate > WORK_STATUS_UPDATE_INTERVAL) {
+            updateBuildingStatusIndicators();
+            lastWorkStatusUpdate = currentTime;
+        }
+        
         animationFrameId = requestAnimationFrame(gameLoop);
     }
     
@@ -5218,10 +5543,27 @@ function updateProduction(delta) {
     buildingsToProcess.forEach(({ buildingInstance, building, tile }) => {
         const workRatio = buildingWorkRatios.get(buildingInstance.instanceId);
         
-        // Если коэффициент 0, здание не работает
+        // Обновляем статус работы здания
         if (workRatio === undefined || workRatio <= 0) {
+            // Определяем причину остановки
+            let reason = '';
+            Object.entries(building.consumes).forEach(([resource, rate]) => {
+                const required = rate * delta;
+                const available = resourceAvailability[resource] || 0;
+                if (available < required) {
+                    if (reason) reason += ', ';
+                    reason += t(`resource.${resource}`) || resource;
+                }
+            });
+            buildingWorkStatus.set(buildingInstance.instanceId, {
+                working: false,
+                reason: reason || t('ui.insufficientResources')
+            });
             return;
         }
+        
+        // Здание работает
+        buildingWorkStatus.set(buildingInstance.instanceId, { working: true });
         
         // Потребляем ресурсы (с учетом коэффициента)
         Object.entries(building.consumes).forEach(([resource, rate]) => {
@@ -5246,6 +5588,18 @@ function updateProduction(delta) {
                 const production = rate * totalBonus * delta * workRatio;
                 resources[resource] = (resources[resource] || 0) + production;
             });
+        }
+    });
+    
+    // Обновляем статус для зданий, которые не потребляют ресурсы (они всегда работают)
+    gameMap.buildings.forEach(buildingInstance => {
+        const building = buildingsCache.get(buildingInstance.buildingId);
+        if (!building || !gameState.enabled[building.id]) return;
+        
+        // Если здание не потребляет ресурсы и производит что-то, оно всегда работает
+        if ((!building.consumes || Object.keys(building.consumes).length === 0) &&
+            building.produces && Object.keys(building.produces).length > 0) {
+            buildingWorkStatus.set(buildingInstance.instanceId, { working: true });
         }
     });
 }

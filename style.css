@@ -104,6 +104,22 @@ body {
     text-align: right;
 }
 
+/* Предупреждение о нехватке ресурсов */
+.resource-item.resource-low {
+    border-color: #ff6b6b !important;
+    background: rgba(255, 107, 107, 0.2) !important;
+    animation: pulse-resource-warning 2s ease-in-out infinite;
+}
+
+@keyframes pulse-resource-warning {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
 .game-time {
     color: #ffd700;
     font-weight: bold;
@@ -276,6 +292,70 @@ body {
 
 .map-building.in-group {
     z-index: 6;
+}
+
+/* Индикаторы статуса работы зданий */
+.map-building.building-working {
+    border-color: #4a9eff;
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.4);
+}
+
+.map-building.building-working::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    background: #4a9eff;
+    border-radius: 50%;
+    box-shadow: 0 0 4px rgba(74, 158, 255, 0.8);
+    animation: pulse-working 2s ease-in-out infinite;
+}
+
+.map-building.building-not-working {
+    border-color: #ff6b6b;
+    opacity: 0.7;
+    filter: grayscale(30%);
+}
+
+.map-building.building-not-working::after {
+    content: '⚠';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 12px;
+    height: 12px;
+    font-size: 10px;
+    color: #ff6b6b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    animation: pulse-warning 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-working {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(0.9);
+    }
+}
+
+@keyframes pulse-warning {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.1);
+    }
 }
 
 /* Контур группы зданий (сегменты по границам) */
@@ -516,7 +596,7 @@ body {
 
 .building-item.locked {
     opacity: 0.4;
-    cursor: not-allowed;
+    cursor: pointer; /* Разрешаем клик даже для locked зданий */
     filter: grayscale(100%);
     border-color: #333;
 }
