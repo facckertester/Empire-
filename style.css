@@ -1,0 +1,901 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Верхняя панель ресурсов (стиль AoE2) */
+.top-panel {
+    background: linear-gradient(180deg, #2d2d2d 0%, #1a1a1a 100%);
+    border-bottom: 3px solid #8b4513;
+    padding: 4px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 70px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    flex-shrink: 0;
+    gap: 16px;
+}
+
+.resources-bar {
+    display: grid;
+    grid-template-columns: repeat(23, 1fr);
+    grid-template-rows: repeat(2, 28px);
+    gap: 4px;
+    align-items: center;
+    flex: 1;
+    overflow: hidden;
+    max-height: 60px;
+}
+
+.resource-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 3px;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 2px 5px;
+    border-radius: 3px;
+    border: 1px solid #555;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    height: 26px;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.resource-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.resource-value {
+    font-weight: bold;
+    font-size: 11px;
+    color: #ffd700;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+    text-align: right;
+}
+
+.game-time {
+    color: #ffd700;
+    font-weight: bold;
+    font-size: 14px;
+    flex-shrink: 0;
+    padding: 4px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    border: 1px solid #555;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.game-time:hover {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* Основной контейнер */
+.main-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Игровое поле */
+.game-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: #1a1a1a;
+    overflow: hidden;
+}
+
+.game-map-container {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    background: #2a2a2a;
+}
+
+.game-map {
+    position: relative;
+    min-width: 100%;
+    min-height: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.game-map-container::-webkit-scrollbar {
+    width: 16px;
+    height: 16px;
+}
+
+.game-map-container::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.game-map-container::-webkit-scrollbar-thumb {
+    background: #8b4513;
+    border-radius: 8px;
+}
+
+.map-grid {
+    position: relative;
+    display: grid;
+    gap: 0;
+    margin: 0;
+}
+
+.tile {
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    position: relative;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.tile:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    z-index: 10;
+}
+
+/* Типы тайлов */
+.tile.grass {
+    background: #4a5a3a;
+}
+
+.tile.forest {
+    background: #2d4a2d;
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.1) 5px, rgba(0,0,0,0.1) 10px);
+}
+
+.tile.stone {
+    background: #6a6a6a;
+    background-image: repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(0,0,0,0.1) 8px, rgba(0,0,0,0.1) 16px);
+}
+
+.tile.gold {
+    background: #8b6914;
+    background-image: radial-gradient(circle, rgba(255,215,0,0.3) 1px, transparent 1px);
+    background-size: 8px 8px;
+}
+
+.tile.iron {
+    background: #5a4a3a;
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.2) 4px, rgba(0,0,0,0.2) 8px);
+}
+
+.tile.water {
+    background: #2a4a6a;
+    background-image: repeating-linear-gradient(0deg, transparent, transparent 10px, rgba(255,255,255,0.1) 10px, rgba(255,255,255,0.1) 20px);
+}
+
+.tile.can-build {
+    border: 2px dashed #4a9eff !important;
+    background-color: rgba(74, 158, 255, 0.2) !important;
+}
+
+.tile.cannot-build {
+    border: 2px dashed #ff6b6b !important;
+    background-color: rgba(255, 107, 107, 0.2) !important;
+}
+
+.tile.preview {
+    border: 2px dashed #ffd700 !important;
+    background-color: rgba(255, 215, 0, 0.1) !important;
+}
+
+/* Здание на карте */
+.map-building {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    border: 2px solid #8b4513;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 5;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+}
+
+.map-building:hover {
+    transform: scale(1.05);
+    border-color: #ffd700;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+    z-index: 20;
+}
+
+.map-building.selected {
+    border-color: #ffd700 !important;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5) !important;
+    z-index: 15;
+}
+
+.map-building.in-group {
+    z-index: 6;
+}
+
+/* Контур группы зданий (сегменты по границам) */
+.building-group-outline-segment {
+    position: absolute;
+    pointer-events: none;
+    z-index: 4;
+    border: 3px solid;
+    border-radius: 3px;
+    animation: pulse-outline 2s ease-in-out infinite;
+    opacity: 0.95;
+    box-shadow: 0 0 10px currentColor, inset 0 0 5px currentColor;
+}
+
+@keyframes pulse-outline {
+    0%, 100% {
+        opacity: 0.85;
+        box-shadow: 0 0 10px currentColor, inset 0 0 5px currentColor;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        box-shadow: 0 0 15px currentColor, inset 0 0 8px currentColor;
+        transform: scale(1.02);
+    }
+}
+
+.map-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 100;
+    pointer-events: auto;
+}
+
+/* Прямоугольник выделения области */
+#selection-box {
+    position: absolute;
+    border: 2px solid #4a9eff;
+    background: rgba(74, 158, 255, 0.1);
+    pointer-events: none;
+    z-index: 50;
+    box-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+    top: 0;
+    left: 0;
+}
+
+.map-btn {
+    width: 30px;
+    height: 30px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid #8b4513;
+    border-radius: 4px;
+    color: #ffd700;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.map-btn:hover {
+    background: rgba(0, 0, 0, 0.9);
+    border-color: #ffd700;
+}
+
+/* Правая панель */
+.right-panel {
+    width: 200px;
+    background: linear-gradient(180deg, #2d2d2d 0%, #1a1a1a 100%);
+    border-left: 3px solid #8b4513;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.5);
+    flex-shrink: 0;
+}
+
+.mini-map {
+    height: 200px;
+    background: rgba(0, 0, 0, 0.5);
+    border-bottom: 2px solid #8b4513;
+    position: relative;
+    overflow: hidden;
+}
+
+.mini-map canvas {
+    width: 100%;
+    height: 100%;
+}
+
+.mini-map-viewport {
+    position: absolute;
+    border: 2px solid #ffd700;
+    background: rgba(255, 215, 0, 0.1);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.info-panel {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+.info-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.info-panel::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.info-panel::-webkit-scrollbar-thumb {
+    background: #8b4513;
+    border-radius: 4px;
+}
+
+.info-content {
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* Нижняя панель - меню зданий */
+
+.bottom-panel-content {
+    flex: 1;
+    display: flex;
+    gap: 12px;
+    position: relative;
+    min-height: 0;
+    overflow: visible;
+}
+
+.bottom-panel {
+    background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%);
+    border-top: 3px solid #8b4513;
+    padding: 12px;
+    height: 180px;
+    box-shadow: 0 -4px 8px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: relative;
+    overflow: visible;
+}
+
+.buildings-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 8px 16px;
+    background: linear-gradient(180deg, #4a4a4a 0%, #2d2d2d 100%);
+    border: 2px solid #8b4513;
+    border-radius: 4px;
+    color: #e0e0e0;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    transition: all 0.2s;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.tab-btn:hover {
+    background: linear-gradient(180deg, #5a5a5a 0%, #3d3d3d 100%);
+    border-color: #a0522d;
+}
+
+.tab-btn.active {
+    background: linear-gradient(180deg, #8b4513 0%, #654321 100%);
+    border-color: #ffd700;
+    color: #ffd700;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.btn-secondary.active {
+    background: linear-gradient(180deg, #8b4513 0%, #654321 100%);
+    border-color: #ffd700;
+    color: #ffd700;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+}
+
+.buildings-list {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    display: flex;
+    gap: 8px;
+    padding: 8px 0;
+    min-width: 0;
+    margin-right: 0;
+    transition: margin-right 0.3s ease;
+}
+
+/* Когда панель выбранного здания видна, список зданий сжимается */
+.bottom-panel-content .selected-panel.visible ~ .buildings-list,
+.bottom-panel-content:has(.selected-panel.visible) .buildings-list {
+    margin-right: 624px; /* Отступ для панели (600px + 12px gap + 12px padding) */
+}
+
+.buildings-list::-webkit-scrollbar {
+    height: 12px;
+}
+
+.buildings-list::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+}
+
+.buildings-list::-webkit-scrollbar-thumb {
+    background: #8b4513;
+    border-radius: 6px;
+}
+
+.building-item {
+    background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
+    border: 2px solid #555;
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    position: relative;
+    width: 90px;
+    height: 100px;
+    flex-shrink: 0;
+}
+
+
+.building-item.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+    filter: grayscale(100%);
+    border-color: #333;
+}
+
+.building-item:not(.locked) {
+    border-color: #555;
+}
+
+.building-item:not(.locked):hover {
+    border-color: #8b4513;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.building-item.selected {
+    border-color: #4a9eff;
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.5);
+    background: linear-gradient(135deg, #4a4a4a 0%, #3a3a3a 100%);
+}
+
+.building-item-icon {
+    font-size: 32px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+}
+
+.building-item-name {
+    font-size: 10px;
+    font-weight: bold;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.building-item-count {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ffd700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+/* Панель выбранного объекта */
+.selected-panel {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(180deg, #2d2d2d 0%, #1a1a1a 100%);
+    border: 3px solid #8b4513;
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+    z-index: 200;
+    width: 600px;
+    max-height: none;
+    height: auto;
+    overflow: visible;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.selected-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 0 0 auto;
+}
+
+.selected-icon {
+    font-size: 32px;
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #8b4513;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.selected-details {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.selected-details h3 {
+    color: #ffd700;
+    margin-bottom: 8px;
+    font-size: 18px;
+    line-height: 1.4;
+    word-wrap: break-word;
+    font-weight: bold;
+}
+
+.selected-stats {
+    font-size: 14px;
+    color: #e0e0e0;
+    line-height: 1.6;
+    overflow: visible;
+    flex: 0 0 auto;
+}
+
+.selected-stats p {
+    margin: 6px 0;
+    line-height: 1.5;
+    font-size: 14px;
+}
+
+.selected-stats strong {
+    font-size: 16px;
+    color: #ffd700;
+    font-weight: bold;
+}
+
+.selected-stats .tooltip-badges {
+    max-height: none;
+    overflow: visible;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.selected-stats .tooltip-badge {
+    font-size: 13px;
+    padding: 4px 8px;
+    margin: 2px 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 28px;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Модальное окно */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+    border: 3px solid #8b4513;
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.7);
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #8b4513;
+    border-radius: 5px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    border-bottom: 2px solid #8b4513;
+    padding-bottom: 8px;
+}
+
+.modal-header h2 {
+    color: #ffd700;
+    font-size: 20px;
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 28px;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.close-modal:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.modal-section {
+    margin-bottom: 16px;
+}
+
+.modal-section h4 {
+    color: #ffd700;
+    margin-bottom: 8px;
+    font-size: 14px;
+    border-bottom: 1px solid #555;
+    padding-bottom: 4px;
+}
+
+.resource-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    font-size: 12px;
+    margin: 4px;
+}
+
+.modal-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modal-buttons button {
+    padding: 12px 20px;
+    border: 2px solid #8b4513;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #8b4513 0%, #6b3410 100%);
+    color: #ffd700;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #a0522d 0%, #8b4513 100%);
+    box-shadow: 0 4px 8px rgba(139, 69, 19, 0.5);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #555 0%, #333 100%);
+    color: #e0e0e0;
+}
+
+.btn-secondary:hover {
+    background: linear-gradient(135deg, #666 0%, #444 100%);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+    color: #ffd700;
+    margin-bottom: 16px;
+    font-size: 18px;
+    border-bottom: 2px solid #8b4513;
+    padding-bottom: 8px;
+}
+
+#mass-build-info {
+    color: #e0e0e0;
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
+#mass-build-info p {
+    margin: 8px 0;
+}
+
+.resource-badge .icon {
+    font-size: 16px;
+}
+
+.build-btn {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(180deg, #4a9eff 0%, #2d6fb8 100%);
+    border: 2px solid #6ba3ff;
+    border-radius: 6px;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    margin-top: 16px;
+}
+
+.build-btn:hover:not(:disabled) {
+    background: linear-gradient(180deg, #5aafff 0%, #3d7fc8 100%);
+    box-shadow: 0 0 15px rgba(74, 158, 255, 0.5);
+}
+
+.build-btn:disabled {
+    background: linear-gradient(180deg, #4a4a4a 0%, #2d2d2d 100%);
+    border-color: #555;
+    color: #888;
+    cursor: not-allowed;
+}
+
+/* Tooltip */
+.tooltip {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+    border: 2px solid #8b4513;
+    border-radius: 8px;
+    padding: 12px;
+    max-width: 300px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+    font-size: 12px;
+}
+
+.tooltip-header {
+    font-size: 14px;
+    font-weight: bold;
+    color: #ffd700;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #555;
+}
+
+.tooltip-section {
+    margin-bottom: 8px;
+}
+
+.tooltip-section:last-child {
+    margin-bottom: 0;
+}
+
+.tooltip-section strong {
+    color: #ffd700;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.tooltip-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.tooltip-badge {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    font-size: 11px;
+}
+
+/* Анимации */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+.resource-value.updating {
+    animation: pulse 0.3s;
+}
