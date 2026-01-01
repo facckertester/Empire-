@@ -1060,7 +1060,7 @@ function createEnemies(count) {
             const speed = 0.4 + wave * 0.02 + level * 0.015;
             const radius = 18 + wave * 0.06;
             const damage = 8 + wave * 0.6;
-            const enemyHealth = roundNumber(baseEnemyHealth * 2);
+            const enemyHealth = roundNumber(baseEnemyHealth * 3);
             
             enemies.push({
                 x: x,
