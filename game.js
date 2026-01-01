@@ -272,7 +272,14 @@ function createBoss() {
         maxShield: roundNumber(bossHealth * 0.3),
         shieldActive: true,
         lastShieldRegen: 0,
-        shieldRegen: 0.01
+        shieldRegen: 0.01,
+        moveTimer: 0,           // Таймер текущего движения
+        moveDuration: 0,        // Продолжительность движения в текущем направлении
+        moveDistance: 0,        // Дистанция движения
+        targetAngle: 0,         // Угол движения
+        startX: canvas.width / 2, // Начальная позиция X
+        startY: canvas.height / 2, // Начальная позиция Y
+        phase: 1,               // Фаза босса (1, 2, 3)
     };
     
     showNotification('boss', `БОСС: ${name}!`);
@@ -400,43 +407,68 @@ function updateBoss(deltaTime) {
     const bossSpeed = boss.speed * (deltaTime / 16.67);
     const margin = boss.radius + 20;
     
-    // Движение по X
-    boss.moveTimerX += deltaTime;
-    if (boss.moveTimerX > 2000) {
-        boss.moveDirectionX *= -1;
-        boss.moveTimerX = 0;
+    // === НОВЫЙ КОД ДВИЖЕНИЯ ===
+    
+    if (boss.phase === 3) {
+        // Фаза 3 (последняя) - преследование игрока
+        const angleToPlayer = Math.atan2(player.y - boss.y, player.x - boss.x);
+        boss.x += Math.cos(angleToPlayer) * bossSpeed * 1.3; // На 30% быстрее при преследовании
+        boss.y += Math.sin(angleToPlayer) * bossSpeed * 1.3;
+    } else {
+        // Фаза 1 и 2 - случайное движение
+        
+        // Проверяем, нужно ли выбрать новую цель
+        boss.moveTimer += deltaTime;
+        
+        if (boss.moveTimer > boss.moveDuration || 
+            boss.x <= margin || boss.x >= canvas.width - margin ||
+            boss.y <= margin || boss.y >= canvas.height - margin) {
+            
+            // Выбираем новое случайное направление и дистанцию
+            boss.targetAngle = Math.random() * Math.PI * 2;
+            boss.moveDuration = 1500 + Math.random() * 1500; // 1.5-3 секунды
+            boss.moveDistance = 50 + Math.random() * 150; // 50-200 пикселей
+            boss.startX = boss.x;
+            boss.startY = boss.y;
+            boss.moveTimer = 0;
+        }
+        
+        // Двигаемся к случайной точке
+        const progress = Math.min(1, boss.moveTimer / boss.moveDuration);
+        const currentDistance = boss.moveDistance * progress;
+        
+        boss.x = boss.startX + Math.cos(boss.targetAngle) * currentDistance;
+        boss.y = boss.startY + Math.sin(boss.targetAngle) * currentDistance;
     }
     
-    boss.x += bossSpeed * boss.moveDirectionX;
+    // Ограничиваем движение в пределах игрового поля
     if (boss.x < margin) {
         boss.x = margin;
-        boss.moveDirectionX = 1;
-        boss.moveTimerX = 0;
+        // При столкновении с границей меняем направление
+        if (boss.phase < 3) {
+            boss.moveTimer = boss.moveDuration; // Завершаем текущее движение
+        }
     }
     if (boss.x > canvas.width - margin) {
         boss.x = canvas.width - margin;
-        boss.moveDirectionX = -1;
-        boss.moveTimerX = 0;
+        if (boss.phase < 3) {
+            boss.moveTimer = boss.moveDuration;
+        }
     }
-    
-    // Движение по Y
-    boss.moveTimerY += deltaTime;
-    if (boss.moveTimerY > 2000) {
-        boss.moveDirectionY *= -1;
-        boss.moveTimerY = 0;
-    }
-    
-    boss.y += bossSpeed * boss.moveDirectionY;
     if (boss.y < margin) {
         boss.y = margin;
-        boss.moveDirectionY = 1;
-        boss.moveTimerY = 0;
+        if (boss.phase < 3) {
+            boss.moveTimer = boss.moveDuration;
+        }
     }
     if (boss.y > canvas.height - margin) {
         boss.y = canvas.height - margin;
-        boss.moveDirectionY = -1;
-        boss.moveTimerY = 0;
+        if (boss.phase < 3) {
+            boss.moveTimer = boss.moveDuration;
+        }
     }
+    
+    // === КОНЕЦ НОВОГО КОДА ДВИЖЕНИЯ ===
     
     const now = Date.now();
     if (now - boss.lastShieldRegen > 2000 && boss.shield < boss.maxShield) {
@@ -479,7 +511,8 @@ function updateBoss(deltaTime) {
                 if (boss.health < boss.maxHealth * 0.25 && boss.phase === 2) {
                     boss.phase = 3;
                     boss.attackCooldown = 1000;
-                    showNotification('boss', 'БОСС В БЕШЕНСТВЕ!');
+                    // Начинаем преследовать игрока
+                    showNotification('boss', 'БОСС В БЕШЕНСТВЕ! ПРЕСЛЕДУЕТ ИГРОКА!');
                 }
                 
                 if (boss.health <= 0) {
@@ -988,8 +1021,8 @@ function createEnemies(count) {
         
         if (enemyType < 0.6) {
             // Обычный враг (60%) - 100% HP
-            const speed = 0.8 + wave * 0.08 + level * 0.03;
-            const radius = 10 + wave * 0.4;
+            const speed = 0.8 + wave * 0.06 + level * 0.03;
+            const radius = 10 + wave * 0.04;
             const damage = 4 + wave * 0.4;
             const enemyHealth = roundNumber(baseEnemyHealth);
             
@@ -1006,8 +1039,8 @@ function createEnemies(count) {
             });
         } else if (enemyType < 0.85) {
             // Быстрый враг (25%) - 50% HP от обычного
-            const speed = 1.5 + wave * 0.12 + level * 0.06;
-            const radius = 7 + wave * 0.25;
+            const speed = 1.5 + wave * 0.1 + level * 0.06;
+            const radius = 7 + wave * 0.025;
             const damage = 2 + wave * 0.25;
             const enemyHealth = roundNumber(baseEnemyHealth * 0.5);
             
@@ -1024,8 +1057,8 @@ function createEnemies(count) {
             });
         } else if (enemyType < 0.95) {
             // Танк (10%) - 200% HP от обычного
-            const speed = 0.4 + wave * 0.04 + level * 0.015;
-            const radius = 18 + wave * 0.6;
+            const speed = 0.4 + wave * 0.02 + level * 0.015;
+            const radius = 18 + wave * 0.06;
             const damage = 8 + wave * 0.6;
             const enemyHealth = roundNumber(baseEnemyHealth * 2);
             
@@ -1373,7 +1406,7 @@ function checkLevelUp() {
     if (player.experience >= player.experienceToNextLevel) {
         player.playerLevel++;
         player.experience -= player.experienceToNextLevel;
-        player.experienceToNextLevel = roundNumber(player.experienceToNextLevel * 1.5);
+        player.experienceToNextLevel = roundNumber(player.experienceToNextLevel * 1.35);
         
         // Бонусы за уровень
         player.maxHealth += 20;
@@ -1401,7 +1434,7 @@ function showWeaponSelection() {
         'damageWaves', 'meteors', 'fireBalls', 'iceSpikes', 'homingMissiles', 'bulletRing'
     ];
     
-    const maxWeapons = player.playerLevel >= 50 ? 5 : 4;
+    const maxWeapons = player.playerLevel >= 30 ? 5 : 4;
     const selectedWeapons = [];
     
     // Если есть свободные слоты, добавляем новые оружия
