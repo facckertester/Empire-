@@ -880,13 +880,18 @@ function shoot(angle) {
 
 // Создание врага-стрелка
 function createShooterEnemy(x, y) {
+    // Базовое HP обычного врага (100%)
+    const baseEnemyHealth = 20 + (wave * 3) + (level * 2);
+    // Стрелок - 75% HP от обычного
+    const enemyHealth = roundNumber(baseEnemyHealth * 0.75);
+    
     return {
         x: x,
         y: y,
         radius: 12,
         speed: 0.5,
-        health: 30 + (wave * 5),
-        maxHealth: 30 + (wave * 5),
+        health: enemyHealth,
+        maxHealth: enemyHealth,
         color: '#ff00ff',
         damage: 5,
         type: 'shooter',
@@ -977,14 +982,16 @@ function createEnemies(count) {
                 break;
         }
         
-        const enemyHealth = roundNumber(20 + (wave * 3) + (level * 2));
+        // Базовое HP обычного врага (100%)
+        const baseEnemyHealth = 20 + (wave * 3) + (level * 2);
         const enemyType = Math.random();
         
         if (enemyType < 0.6) {
-            // Обычный враг (60%)
+            // Обычный враг (60%) - 100% HP
             const speed = 0.8 + wave * 0.08 + level * 0.03;
             const radius = 10 + wave * 0.4;
             const damage = 4 + wave * 0.4;
+            const enemyHealth = roundNumber(baseEnemyHealth);
             
             enemies.push({
                 x: x,
@@ -998,10 +1005,11 @@ function createEnemies(count) {
                 type: 'normal'
             });
         } else if (enemyType < 0.85) {
-            // Быстрый враг (25%)
+            // Быстрый враг (25%) - 50% HP от обычного
             const speed = 1.5 + wave * 0.12 + level * 0.06;
             const radius = 7 + wave * 0.25;
             const damage = 2 + wave * 0.25;
+            const enemyHealth = roundNumber(baseEnemyHealth * 0.5);
             
             enemies.push({
                 x: x,
@@ -1015,10 +1023,11 @@ function createEnemies(count) {
                 type: 'fast'
             });
         } else if (enemyType < 0.95) {
-            // Танк (10%)
+            // Танк (10%) - 200% HP от обычного
             const speed = 0.4 + wave * 0.04 + level * 0.015;
             const radius = 18 + wave * 0.6;
             const damage = 8 + wave * 0.6;
+            const enemyHealth = roundNumber(baseEnemyHealth * 2);
             
             enemies.push({
                 x: x,
