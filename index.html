@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Last Broadcast</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        .goal-item {
+            padding: 5px;
+            margin: 3px 0;
+            border-left: 3px solid #4a9fff;
+            background: rgba(74, 159, 255, 0.1);
+        }
+        .goal-item.completed {
+            border-left-color: #4aff9a;
+            background: rgba(74, 255, 154, 0.1);
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+        .day-progress {
+            height: 6px;
+            background: #2a2a4a;
+            border-radius: 3px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .day-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4a9fff, #4aff9a);
+            width: 0%;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- ЛЕВАЯ ПАНЕЛЬ - РАДИО -->
+        <div class="radio-panel">
+            <div class="station-header">
+                <h1><span class="station-name">ГОЛОС НАДЕЖДЫ</span><span class="station-sub"> - ПОСЛЕДНЯЯ СТАНЦИЯ</span></h1>
+                <div class="status">
+                    <div class="status-item">
+                        <span class="status-label">ДЕНЬ</span>
+                        <span id="day" class="status-value">1</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">ВРЕМЯ</span>
+                        <span id="time" class="status-value">00:00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">РИСК</span>
+                        <span id="risk" class="status-value">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">ЭНЕРГИЯ</span>
+                        <span id="power" class="status-value">100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="frequency-section">
+                <div class="frequency-display">
+                    <div class="freq-digits">
+                        <span id="digit1">0</span>
+                        <span id="digit2">9</span>
+                        <span id="digit3">8</span>
+                        <span class="decimal">.</span>
+                        <span id="digit4">5</span>
+                        <span class="unit">МГц</span>
+                    </div>
+                    <div class="signal-display">
+                        <div class="signal-strength">
+                            <div class="signal-bar" id="signal-bar"></div>
+                        </div>
+                        <span id="signal-text" class="signal-text">ПОИСК...</span>
+                    </div>
+                </div>
+
+                <div class="tuner-section">
+                    <div class="knob-container">
+                        <div class="knob" id="knob">
+                            <div class="knob-mark"></div>
+                            <div class="knob-center"></div>
+                        </div>
+                        <div class="knob-label">НАСТРОЙКА ЧАСТОТЫ</div>
+                        <div class="knob-value" id="knob-value">↻ 0°</div>
+                    </div>
+                    
+                    <div class="tuner-controls">
+                        <button id="scan-up" class="tuner-btn">
+                            <span class="btn-icon">▲</span>
+                            <span class="btn-text">СКАН +</span>
+                        </button>
+                        <button id="scan-down" class="tuner-btn">
+                            <span class="btn-icon">▼</span>
+                            <span class="btn-text">СКАН -</span>
+                        </button>
+                        <button id="lock" class="tuner-btn">
+                            <span class="btn-icon">📍</span>
+                            <span class="btn-text">БЛОК</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-section">
+                <div class="control-row">
+                    <div class="control-group">
+                        <label class="control-label">
+                            <span class="control-icon">🔊</span>
+                            <span class="control-text">ГРОМКОСТЬ</span>
+                        </label>
+                        <input type="range" id="volume" min="0" max="100" value="50" class="slider">
+                        <output for="volume" id="volume-value" class="slider-value">50%</output>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label class="control-label">
+                            <span class="control-icon">🌀</span>
+                            <span class="control-text">ФИЛЬТР</span>
+                        </label>
+                        <input type="range" id="filter" min="0" max="100" value="0" class="slider">
+                        <output for="filter" id="filter-value" class="slider-value">0%</output>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-section">
+                <div class="action-buttons">
+                    <button id="record" class="action-btn primary-btn">
+                        <span class="action-icon">⏺</span>
+                        <span class="action-text">ЗАПИСАТЬ</span>
+                    </button>
+                    <button id="analyze" class="action-btn secondary-btn">
+                        <span class="action-icon">🔍</span>
+                        <span class="action-text">АНАЛИЗ</span>
+                    </button>
+                    <button id="emergency" class="action-btn danger-btn">
+                        <span class="action-icon">⚠️</span>
+                        <span class="action-text">СТОП</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="spectrum-section">
+                <div class="spectrum-header">
+                    <span class="spectrum-title">СПЕКТР СИГНАЛА</span>
+                    <div class="spectrum-mode" id="spectrum-mode">ВРЕМЯ</div>
+                </div>
+                <canvas id="spectrum" width="600" height="80"></canvas>
+            </div>
+        </div>
+
+        <!-- ПРАВАЯ ПАНЕЛЬ - ИНФОРМАЦИЯ -->
+        <div class="info-panel">
+            <!-- ЦЕЛИ И ПРОГРЕСС -->
+            <div class="goals-section">
+                <h2>🎯 ЦЕЛИ ДНЯ <span id="day-goals">0/3</span></h2>
+                <div class="day-progress">
+                    <div class="day-progress-fill" id="day-progress"></div>
+                </div>
+                <div class="goals-list" id="goals-list">
+                    <!-- Цели будут добавляться сюда -->
+                </div>
+            </div>
+
+            <!-- АКТИВНАЯ ПЕРЕДАЧА -->
+            <div class="transmission-section">
+                <div class="transmission-header">
+                    <h2>📡 АКТИВНАЯ ПЕРЕДАЧА</h2>
+                    <div class="transmission-info">
+                        <span id="source-name" class="source-name">—</span>
+                        <span id="transmission-risk" class="risk-badge">БЕЗОП.</span>
+                    </div>
+                </div>
+                <div class="transmission-content" id="transmission-text">
+                    ...сканирование эфира... поиск сигналов...
+                </div>
+                <div class="transmission-tags" id="transmission-tags">
+                    <span class="tag">ПОИСК</span>
+                </div>
+                <div class="transmission-actions">
+                    <button id="bookmark" class="transmission-btn">
+                        <span class="btn-icon">📍</span>
+                        <span>ЗАКЛАДКА</span>
+                    </button>
+                    <button id="respond" class="transmission-btn">
+                        <span class="btn-icon">📤</span>
+                        <span>ОТВЕТИТЬ</span>
+                    </button>
+                    <button id="decode" class="transmission-btn">
+                        <span class="btn-icon">🔓</span>
+                        <span>ДЕКОДИР.</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ЖУРНАЛ И ПРОГРЕСС -->
+            <div class="log-section">
+                <div class="log-header">
+                    <h2>📖 ЖУРНАЛ <span id="log-count">[1]</span></h2>
+                    <button id="clear-log" class="clear-btn">🗑️</button>
+                </div>
+                <div class="log-content" id="log-content">
+                    <div class="log-entry">
+                        <div class="log-meta">ДЕНЬ 1 | 00:00 | [ЗАПУСК]</div>
+                        <div class="log-text">Станция "Голос Надежды" активирована. Начинаю сканирование эфира.</div>
+                    </div>
+                </div>
+                <div class="log-input">
+                    <textarea id="player-notes" placeholder="ВАШИ ЗАМЕТКИ... (автосохранение)"></textarea>
+                    <div class="input-info">
+                        <span id="char-count" class="char-count">0/500</span>
+                        <button id="save-note" class="save-btn">💾</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- РЕСУРСЫ И ЗАКЛАДКИ -->
+            <div class="resources-section">
+                <div class="resources-header">
+                    <h2>📊 ПРОГРЕСС</h2>
+                    <div class="resource-stats">
+                        <span>🔍 <span id="discovered">1</span>/6</span>
+                        <span>📍 <span id="bookmarks-count">0</span></span>
+                    </div>
+                </div>
+                <div class="progress-display">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">
+                        ИССЛЕДОВАНО: <span id="progress-percent">16%</span>
+                    </div>
+                </div>
+                <div class="bookmarks-container">
+                    <h3>📍 ЗАКЛАДКИ</h3>
+                    <div class="bookmarks-list" id="bookmarks-list">
+                        <div class="empty-bookmarks">Нет закладок</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНЫЕ ОКНА -->
+    <div id="modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-content">
+                <h2 id="modal-title" class="modal-title">СОБЫТИЕ</h2>
+                <div id="modal-text" class="modal-text"></div>
+                <div id="modal-options" class="modal-options"></div>
+                <div class="modal-actions">
+                    <button id="modal-close" class="modal-btn secondary-btn">ЗАКРЫТЬ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ФИНАЛЬНЫЙ ЭКРАН -->
+    <div id="ending-screen" class="ending-overlay" style="display: none;">
+        <div class="ending-container">
+            <div class="ending-content">
+                <h1 id="ending-title" class="ending-title">КОНЕЦ ИГРЫ</h1>
+                <div id="ending-text" class="ending-text"></div>
+                <div class="ending-stats" id="ending-stats"></div>
+                <div class="ending-actions">
+                    <button id="ending-restart" class="ending-btn primary-btn">НОВАЯ ИГРА</button>
+                    <button id="ending-continue" class="ending-btn secondary-btn">ПРОДОЛЖИТЬ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
