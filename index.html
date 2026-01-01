@@ -21,8 +21,8 @@
                     <span id="lives" class="stat-value">5</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-label">Очки:</span>
-                    <span id="score" class="stat-value">0</span>
+                    <span class="stat-label">Деньги:</span>
+                    <span id="money" class="stat-value">0</span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">Уровень:</span>
@@ -49,7 +49,7 @@
                         <i class="fas fa-arrow-left"></i><i class="fas fa-arrow-right"></i>
                         <span> - Движение</span>
                     </div>
-                    <div class="control-item">
+                    <div class="control-item" id="shootModeDisplay">
                         <i class="fas fa-mouse-pointer"></i>
                         <span> - Автострельба</span>
                     </div>
@@ -60,7 +60,7 @@
                         <span>Shift - Активировать щит</span>
                     </div>
                     <div class="control-item">
-                        <span>ЛКМ - Ручной выстрел</span>
+                        <span>ПКМ - Ручной выстрел</span>
                     </div>
                 </div>
                 
@@ -275,6 +275,12 @@
                 <div class="high-score">
                     <h3>Рекорд: <span id="highScoreValue">0</span></h3>
                 </div>
+            </div>
+        </div>
+        
+        <div class="weapon-selection-overlay" id="weaponSelectionOverlay">
+            <div class="weapon-selection-content">
+                <div id="weaponSelectionContainer"></div>
             </div>
         </div>
     </div>
