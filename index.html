@@ -3,279 +3,282 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Last Broadcast</title>
+    <title>Космический выживальщик</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        .goal-item {
-            padding: 5px;
-            margin: 3px 0;
-            border-left: 3px solid #4a9fff;
-            background: rgba(74, 159, 255, 0.1);
-        }
-        .goal-item.completed {
-            border-left-color: #4aff9a;
-            background: rgba(74, 255, 154, 0.1);
-            text-decoration: line-through;
-            opacity: 0.7;
-        }
-        .day-progress {
-            height: 6px;
-            background: #2a2a4a;
-            border-radius: 3px;
-            margin: 10px 0;
-            overflow: hidden;
-        }
-        .day-progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #4a9fff, #4aff9a);
-            width: 0%;
-            transition: width 0.5s;
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <!-- ЛЕВАЯ ПАНЕЛЬ - РАДИО -->
-        <div class="radio-panel">
-            <div class="station-header">
-                <h1><span class="station-name">ГОЛОС НАДЕЖДЫ</span><span class="station-sub"> - ПОСЛЕДНЯЯ СТАНЦИЯ</span></h1>
-                <div class="status">
-                    <div class="status-item">
-                        <span class="status-label">ДЕНЬ</span>
-                        <span id="day" class="status-value">1</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">ВРЕМЯ</span>
-                        <span id="time" class="status-value">00:00</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">РИСК</span>
-                        <span id="risk" class="status-value">0</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">ЭНЕРГИЯ</span>
-                        <span id="power" class="status-value">100%</span>
-                    </div>
+    <div class="game-container">
+        <header class="game-header">
+            <h1><i class="fas fa-rocket"></i> Космический выживальщик</h1>
+            <div class="game-stats">
+                <div class="stat">
+                    <span class="stat-label">Волна:</span>
+                    <span id="wave" class="stat-value">1</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Жизни:</span>
+                    <span id="lives" class="stat-value">5</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Очки:</span>
+                    <span id="score" class="stat-value">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Уровень:</span>
+                    <span id="level" class="stat-value">1</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Игрок:</span>
+                    <span id="playerLevel" class="stat-value">Ур. 1</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Щит:</span>
+                    <span id="shield" class="stat-value">0%</span>
                 </div>
             </div>
-
-            <div class="frequency-section">
-                <div class="frequency-display">
-                    <div class="freq-digits">
-                        <span id="digit1">0</span>
-                        <span id="digit2">9</span>
-                        <span id="digit3">8</span>
-                        <span class="decimal">.</span>
-                        <span id="digit4">5</span>
-                        <span class="unit">МГц</span>
+        </header>
+        
+        <div class="game-content">
+            <div class="game-area">
+                <canvas id="gameCanvas"></canvas>
+                
+                <div class="controls-info">
+                    <div class="control-item">
+                        <i class="fas fa-arrow-up"></i><i class="fas fa-arrow-down"></i>
+                        <i class="fas fa-arrow-left"></i><i class="fas fa-arrow-right"></i>
+                        <span> - Движение</span>
                     </div>
-                    <div class="signal-display">
-                        <div class="signal-strength">
-                            <div class="signal-bar" id="signal-bar"></div>
-                        </div>
-                        <span id="signal-text" class="signal-text">ПОИСК...</span>
+                    <div class="control-item">
+                        <i class="fas fa-mouse-pointer"></i>
+                        <span> - Автострельба</span>
+                    </div>
+                    <div class="control-item">
+                        <span>Пробел - Пауза</span>
+                    </div>
+                    <div class="control-item">
+                        <span>Shift - Активировать щит</span>
+                    </div>
+                    <div class="control-item">
+                        <span>ЛКМ - Ручной выстрел</span>
                     </div>
                 </div>
-
-                <div class="tuner-section">
-                    <div class="knob-container">
-                        <div class="knob" id="knob">
-                            <div class="knob-mark"></div>
-                            <div class="knob-center"></div>
+                
+                <!-- Полоска опыта игрока -->
+                <div class="experience-bar-container">
+                    <div class="experience-bar-label">
+                        <span>Опыт:</span>
+                        <span id="playerExpText">0/100</span>
+                    </div>
+                    <div class="experience-bar">
+                        <div class="experience-bar-fill" id="playerExp"></div>
+                    </div>
+                </div>
+                
+                <!-- Уведомления о подборе улучшений -->
+                <div class="notifications-container" id="notificationsContainer"></div>
+            </div>
+            
+            <div class="upgrades-panel">
+                <h2><i class="fas fa-cogs"></i> Улучшения</h2>
+                <div class="upgrades-list">
+                    <div class="upgrade" id="upgradeDamage">
+                        <h3><i class="fas fa-bolt"></i> Урон</h3>
+                        <p>Увеличивает урон от выстрелов</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">1</span>/20</span>
+                            <span class="upgrade-cost">Стоимость: 100</span>
                         </div>
-                        <div class="knob-label">НАСТРОЙКА ЧАСТОТЫ</div>
-                        <div class="knob-value" id="knob-value">↻ 0°</div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('damage')">Улучшить</button>
                     </div>
                     
-                    <div class="tuner-controls">
-                        <button id="scan-up" class="tuner-btn">
-                            <span class="btn-icon">▲</span>
-                            <span class="btn-text">СКАН +</span>
-                        </button>
-                        <button id="scan-down" class="tuner-btn">
-                            <span class="btn-icon">▼</span>
-                            <span class="btn-text">СКАН -</span>
-                        </button>
-                        <button id="lock" class="tuner-btn">
-                            <span class="btn-icon">📍</span>
-                            <span class="btn-text">БЛОК</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="controls-section">
-                <div class="control-row">
-                    <div class="control-group">
-                        <label class="control-label">
-                            <span class="control-icon">🔊</span>
-                            <span class="control-text">ГРОМКОСТЬ</span>
-                        </label>
-                        <input type="range" id="volume" min="0" max="100" value="50" class="slider">
-                        <output for="volume" id="volume-value" class="slider-value">50%</output>
+                    <div class="upgrade" id="upgradeFireRate">
+                        <h3><i class="fas fa-tachometer-alt"></i> Скорострельность</h3>
+                        <p>Увеличивает скорость стрельбы</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">1</span>/20</span>
+                            <span class="upgrade-cost">Стоимость: 150</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('fireRate')">Улучшить</button>
                     </div>
                     
-                    <div class="control-group">
-                        <label class="control-label">
-                            <span class="control-icon">🌀</span>
-                            <span class="control-text">ФИЛЬТР</span>
-                        </label>
-                        <input type="range" id="filter" min="0" max="100" value="0" class="slider">
-                        <output for="filter" id="filter-value" class="slider-value">0%</output>
+                    <div class="upgrade" id="upgradeHealth">
+                        <h3><i class="fas fa-heart"></i> Здоровье</h3>
+                        <p>Увеличивает максимальное здоровье</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">1</span>/20</span>
+                            <span class="upgrade-cost">Стоимость: 200</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('health')">Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeMovement">
+                        <h3><i class="fas fa-running"></i> Скорость</h3>
+                        <p>Увеличивает скорость движения</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">1</span>/15</span>
+                            <span class="upgrade-cost">Стоимость: 120</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('movement')">Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeShield">
+                        <h3><i class="fas fa-shield-alt"></i> Щит</h3>
+                        <p>Увеличивает прочность щита</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span class="upgrade-cost">Стоимость: 250</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('shield')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeSplit">
+                        <h3><i class="fas fa-code-branch"></i> Разделение</h3>
+                        <p>Пули разделяются при попадании</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/3</span>
+                            <span class="upgrade-cost">Стоимость: 400</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('split')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeRicochet">
+                        <h3><i class="fas fa-reply-all"></i> Рикошет</h3>
+                        <p>Пули отскакивают от врагов</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span class="upgrade-cost">Стоимость: 350</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('ricochet')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradePiercing">
+                        <h3><i class="fas fa-arrow-right"></i> Пробивание</h3>
+                        <p>Пули пробивают нескольких врагов</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span class="upgrade-cost">Стоимость: 400</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('piercing')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <!-- Новые улучшения -->
+                    <div class="upgrade" id="upgradeLifeSteal">
+                        <h3><i class="fas fa-tint"></i> Кража жизни</h3>
+                        <p>Восстанавливает здоровье при убийстве</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span class="upgrade-cost">Стоимость: 300</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('lifeSteal')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeCriticalChance">
+                        <h3><i class="fas fa-crosshairs"></i> Шанс крита</h3>
+                        <p>Увеличивает шанс критического удара</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span class="upgrade-cost">Стоимость: 400</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('criticalChance')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeCriticalMultiplier">
+                        <h3><i class="fas fa-bomb"></i> Сила крита</h3>
+                        <p>Увеличивает силу критического удара</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span class="upgrade-cost">Стоимость: 500</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('criticalMultiplier')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeBulletSpeed">
+                        <h3><i class="fas fa-bullseye"></i> Скорость пуль</h3>
+                        <p>Увеличивает скорость полета пуль</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span class="upgrade-cost">Стоимость: 200</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('bulletSpeed')">Купить/Улучшить</button>
+                    </div>
+                    
+                    <div class="upgrade" id="upgradeExperienceGain">
+                        <h3><i class="fas fa-chart-line"></i> Прирост опыта</h3>
+                        <p>Увеличивает получаемый опыт</p>
+                        <div class="upgrade-level">
+                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span class="upgrade-cost">Стоимость: 600</span>
+                        </div>
+                        <button class="upgrade-btn" onclick="buyUpgrade('experienceGain')">Купить/Улучшить</button>
                     </div>
                 </div>
-            </div>
-
-            <div class="action-section">
-                <div class="action-buttons">
-                    <button id="record" class="action-btn primary-btn">
-                        <span class="action-icon">⏺</span>
-                        <span class="action-text">ЗАПИСАТЬ</span>
-                    </button>
-                    <button id="analyze" class="action-btn secondary-btn">
-                        <span class="action-icon">🔍</span>
-                        <span class="action-text">АНАЛИЗ</span>
-                    </button>
-                    <button id="emergency" class="action-btn danger-btn">
-                        <span class="action-icon">⚠️</span>
-                        <span class="action-text">СТОП</span>
-                    </button>
+                
+                <div class="game-instructions">
+                    <h3><i class="fas fa-info-circle"></i> Как играть</h3>
+                    <p>Игра автоматически стреляет в ближайшего врага. Уклоняйтесь от врагов, используйте Shift для активации щита. Уничтожайте врагов для получения очков и опыта.</p>
+                    <p><strong>Каждые 10 волн появляется БОСС!</strong></p>
+                    <div class="enemy-types">
+                        <h4><i class="fas fa-robot"></i> Типы врагов:</h4>
+                        <div class="enemy-type">
+                            <span class="enemy-color normal"></span>
+                            <span>Обычный - медленный, средний урон</span>
+                        </div>
+                        <div class="enemy-type">
+                            <span class="enemy-color fast"></span>
+                            <span>Быстрый - быстро движется, слабый урон</span>
+                        </div>
+                        <div class="enemy-type">
+                            <span class="enemy-color tank"></span>
+                            <span>Танк - медленный, много здоровья, сильный урон</span>
+                        </div>
+                        <div class="enemy-type">
+                            <span class="enemy-color shooter"></span>
+                            <span>Стрелок - стреляет на расстоянии</span>
+                        </div>
+                    </div>
                 </div>
-            </div>
-
-            <div class="spectrum-section">
-                <div class="spectrum-header">
-                    <span class="spectrum-title">СПЕКТР СИГНАЛА</span>
-                    <div class="spectrum-mode" id="spectrum-mode">ВРЕМЯ</div>
-                </div>
-                <canvas id="spectrum" width="600" height="80"></canvas>
             </div>
         </div>
-
-        <!-- ПРАВАЯ ПАНЕЛЬ - ИНФОРМАЦИЯ -->
-        <div class="info-panel">
-            <!-- ЦЕЛИ И ПРОГРЕСС -->
-            <div class="goals-section">
-                <h2>🎯 ЦЕЛИ ДНЯ <span id="day-goals">0/3</span></h2>
-                <div class="day-progress">
-                    <div class="day-progress-fill" id="day-progress"></div>
-                </div>
-                <div class="goals-list" id="goals-list">
-                    <!-- Цели будут добавляться сюда -->
+        
+        <div class="game-footer">
+            <div class="wave-info">
+                <h3>Следующая волна через: <span id="waveTimer">10</span> сек.</h3>
+                <div class="wave-progress">
+                    <div class="wave-progress-bar" id="waveProgress"></div>
                 </div>
             </div>
-
-            <!-- АКТИВНАЯ ПЕРЕДАЧА -->
-            <div class="transmission-section">
-                <div class="transmission-header">
-                    <h2>📡 АКТИВНАЯ ПЕРЕДАЧА</h2>
-                    <div class="transmission-info">
-                        <span id="source-name" class="source-name">—</span>
-                        <span id="transmission-risk" class="risk-badge">БЕЗОП.</span>
-                    </div>
-                </div>
-                <div class="transmission-content" id="transmission-text">
-                    ...сканирование эфира... поиск сигналов...
-                </div>
-                <div class="transmission-tags" id="transmission-tags">
-                    <span class="tag">ПОИСК</span>
-                </div>
-                <div class="transmission-actions">
-                    <button id="bookmark" class="transmission-btn">
-                        <span class="btn-icon">📍</span>
-                        <span>ЗАКЛАДКА</span>
-                    </button>
-                    <button id="respond" class="transmission-btn">
-                        <span class="btn-icon">📤</span>
-                        <span>ОТВЕТИТЬ</span>
-                    </button>
-                    <button id="decode" class="transmission-btn">
-                        <span class="btn-icon">🔓</span>
-                        <span>ДЕКОДИР.</span>
-                    </button>
-                </div>
+            
+            <div class="game-controls">
+                <button id="pauseBtn" onclick="togglePause()">
+                    <i class="fas fa-pause"></i> Пауза
+                </button>
+                <button id="restartBtn" onclick="restartGame()">
+                    <i class="fas fa-redo"></i> Начать заново
+                </button>
+                <button id="soundBtn" onclick="toggleSound()">
+                    <i class="fas fa-volume-up"></i> Звук
+                </button>
+                <button id="fullscreenBtn" onclick="toggleFullscreen()">
+                    <i class="fas fa-expand"></i> На весь экран
+                </button>
             </div>
-
-            <!-- ЖУРНАЛ И ПРОГРЕСС -->
-            <div class="log-section">
-                <div class="log-header">
-                    <h2>📖 ЖУРНАЛ <span id="log-count">[1]</span></h2>
-                    <button id="clear-log" class="clear-btn">🗑️</button>
-                </div>
-                <div class="log-content" id="log-content">
-                    <div class="log-entry">
-                        <div class="log-meta">ДЕНЬ 1 | 00:00 | [ЗАПУСК]</div>
-                        <div class="log-text">Станция "Голос Надежды" активирована. Начинаю сканирование эфира.</div>
-                    </div>
-                </div>
-                <div class="log-input">
-                    <textarea id="player-notes" placeholder="ВАШИ ЗАМЕТКИ... (автосохранение)"></textarea>
-                    <div class="input-info">
-                        <span id="char-count" class="char-count">0/500</span>
-                        <button id="save-note" class="save-btn">💾</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- РЕСУРСЫ И ЗАКЛАДКИ -->
-            <div class="resources-section">
-                <div class="resources-header">
-                    <h2>📊 ПРОГРЕСС</h2>
-                    <div class="resource-stats">
-                        <span>🔍 <span id="discovered">1</span>/6</span>
-                        <span>📍 <span id="bookmarks-count">0</span></span>
-                    </div>
-                </div>
-                <div class="progress-display">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progress-fill"></div>
-                    </div>
-                    <div class="progress-text">
-                        ИССЛЕДОВАНО: <span id="progress-percent">16%</span>
-                    </div>
-                </div>
-                <div class="bookmarks-container">
-                    <h3>📍 ЗАКЛАДКИ</h3>
-                    <div class="bookmarks-list" id="bookmarks-list">
-                        <div class="empty-bookmarks">Нет закладок</div>
-                    </div>
+        </div>
+        
+        <div class="game-overlay" id="gameOverlay">
+            <div class="overlay-content">
+                <h2 id="overlayTitle">Космический выживальщик</h2>
+                <p id="overlayText">Игра автоматически стреляет в ближайшего врага. Уклоняйтесь от врагов, используйте Shift для активации щита. Уничтожайте врагов для получения очков и опыта. Каждые 10 волн появляется БОСС!</p>
+                <button id="startBtn" onclick="startGame()">
+                    <i class="fas fa-play"></i> Начать игру
+                </button>
+                <div class="high-score">
+                    <h3>Рекорд: <span id="highScoreValue">0</span></h3>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- МОДАЛЬНЫЕ ОКНА -->
-    <div id="modal" class="modal-overlay">
-        <div class="modal-container">
-            <div class="modal-content">
-                <h2 id="modal-title" class="modal-title">СОБЫТИЕ</h2>
-                <div id="modal-text" class="modal-text"></div>
-                <div id="modal-options" class="modal-options"></div>
-                <div class="modal-actions">
-                    <button id="modal-close" class="modal-btn secondary-btn">ЗАКРЫТЬ</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ФИНАЛЬНЫЙ ЭКРАН -->
-    <div id="ending-screen" class="ending-overlay" style="display: none;">
-        <div class="ending-container">
-            <div class="ending-content">
-                <h1 id="ending-title" class="ending-title">КОНЕЦ ИГРЫ</h1>
-                <div id="ending-text" class="ending-text"></div>
-                <div class="ending-stats" id="ending-stats"></div>
-                <div class="ending-actions">
-                    <button id="ending-restart" class="ending-btn primary-btn">НОВАЯ ИГРА</button>
-                    <button id="ending-continue" class="ending-btn secondary-btn">ПРОДОЛЖИТЬ</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
+    
     <script src="game.js"></script>
 </body>
 </html>

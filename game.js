@@ -1,1684 +1,2456 @@
-// ===== КОНФИГУРАЦИЯ ИГРЫ =====
-const CONFIG = {
-    VERSION: '2.2',
-    DAY_DURATION: 350, // 5 минут в секундах на игровой день
-    MAX_DAYS: 7,
-    FREQ_MIN: 0.0,
-    FREQ_MAX: 500.0,
-    FREQ_STEP: 0.1,
-    
-    // Система прогресса
-    DISCOVERY_POINTS: 10,
-    RESPONSE_POINTS: 5,
-    GOAL_POINTS: 20,
-    
-    // Базовые значения
-    INITIAL_POWER: 100,
-    POWER_DRAIN: 0.01, // в секунду (меньше, т.к. день длиннее)
-    RISK_DECAY: 0.005, // в секунду
-    MAX_RISK: 10
+// Основные переменные игры
+let canvas, ctx;
+let gameActive = false;
+let gamePaused = false;
+let soundEnabled = true;
+let score = 0;
+let highScore = localStorage.getItem('spaceSurvivorHighScore') || 0;
+let lives = 5;
+let wave = 1;
+let level = 1;
+let waveTimer = 10;
+let waveInterval;
+let bossEnemySpawnInterval;
+let gameTime = 0;
+let stars = [];
+let isFullscreen = false;
+let autoShootInterval;
+let shieldActive = false;
+let shieldCooldown = false;
+let bossActive = false;
+let boss = null;
+
+// Единый AudioContext для всех звуков (оптимизация памяти)
+let audioContext = null;
+
+// Максимальное количество объектов (оптимизация памяти)
+const MAX_PARTICLES = 500;
+const MAX_NOTIFICATIONS = 10;
+const MAX_BULLETS = 300;
+const MAX_ENEMY_BULLETS = 200;
+
+// Фиксированный временной шаг для независимости от FPS (60 FPS)
+const FIXED_TIMESTEP = 1000 / 60; // 16.67 мс на кадр при 60 FPS
+let lastTime = 0;
+let accumulator = 0;
+
+// Объект игрока
+const player = {
+    x: 400,
+    y: 250,
+    radius: 15,
+    speed: 4,
+    color: '#4fc3f7',
+    health: 100,
+    maxHealth: 100,
+    fireRate: 400,
+    damage: 10,
+    lastShot: 0,
+    isMoving: { up: false, down: false, left: false, right: false },
+    mouseX: 400,
+    mouseY: 250,
+    shield: 0,
+    maxShield: 0,
+    shieldRegen: 0.05,
+    lastShieldRegen: 0,
+    splitLevel: 0,
+    ricochetLevel: 0,
+    piercingLevel: 0,
+    shieldActiveTime: 0,
+    shieldCooldownTime: 0,
+    lifeSteal: 0,
+    criticalChance: 5,
+    criticalMultiplier: 2,
+    bulletSpeed: 7,
+    experience: 0,
+    experienceToNextLevel: 100,
+    playerLevel: 1
 };
 
-// ===== СОСТОЯНИЕ ИГРЫ =====
-const GameState = {
-    // Основные параметры
-    day: 1,
-    gameTime: 0,
-    power: CONFIG.INITIAL_POWER,
-    risk: 0,
-    currentFrequency: 88.8,
-    
-    // Прогресс
-    discoveredFrequencies: new Set(['88.8']), // Начинаем с карусели
-    goalsCompleted: new Set(),
-    dayPoints: 0,
-    totalPoints: 0,
-    responses: new Map(), // частоты → количество ответов
-    
-    // Данные
-    logEntries: [],
-    playerNotes: '',
-    bookmarks: [],
-    transmissionsFound: new Map(),
-    
-    // События
-    eventsTriggered: new Set(),
-    currentEvent: null,
-    
-    // Интерфейс
-    isDragging: false,
-    dragStart: { x: 0, y: 0, freq: 0 },
-    
-    // Сохранение
-    saveSlot: 'last_broadcast_v2',
-    
-    // Флаги
-    gameActive: true,
-    lastUpdate: Date.now()
+// Массивы объектов игры
+let bullets = [];
+let enemies = [];
+let enemyBullets = [];
+let particles = [];
+let upgrades = [];
+let notifications = [];
+let bossProjectiles = [];
+let healthCores = [];
+
+// Система улучшений (добавлены новые улучшения)
+const upgradeSystem = {
+    damage: { level: 1, cost: 100, value: 10, maxLevel: 20, description: "Урон +3" },
+    fireRate: { level: 1, cost: 150, value: 400, maxLevel: 20, description: "Скорострельность +8%" },
+    health: { level: 1, cost: 200, value: 100, maxLevel: 20, description: "Здоровье +20" },
+    movement: { level: 1, cost: 120, value: 4, maxLevel: 15, description: "Скорость +0.3" },
+    shield: { level: 0, cost: 250, value: 0, maxLevel: 10, description: "Щит +15%" },
+    split: { level: 0, cost: 400, value: 0, maxLevel: 3, description: "Разделение пуль" },
+    ricochet: { level: 0, cost: 350, value: 0, maxLevel: 5, description: "Рикошет +1" },
+    piercing: { level: 0, cost: 400, value: 0, maxLevel: 5, description: "Пробивание +1" },
+    lifeSteal: { level: 0, cost: 300, value: 0, maxLevel: 10, description: "Кража жизни +1%" },
+    criticalChance: { level: 0, cost: 400, value: 5, maxLevel: 10, description: "Шанс крита +5%" },
+    criticalMultiplier: { level: 0, cost: 500, value: 2, maxLevel: 5, description: "Множитель крита +0.5" },
+    bulletSpeed: { level: 0, cost: 200, value: 7, maxLevel: 10, description: "Скорость пуль +5%" },
+    experienceGain: { level: 0, cost: 600, value: 1, maxLevel: 5, description: "Опыт +20%" }
 };
 
-// ===== БАЗА ДАННЫХ =====
-const DATABASE = {
-    // Все частоты с передачами
-    frequencies: {
-        '98.5': {
-            id: 'carousel',
-            name: 'Карусель Прошлого',
-            text: '...зацикленная мелодия детской карусели... сквозь шум детский шёпот: "Они не любят весёлые звуки..."',
-            tags: ['МУЗЫКА', 'ПРОШЛОЕ', 'ПРЕДУПРЕЖДЕНИЕ'],
-            risk: 1,
-            discoverDay: 1,
-            responses: [
-                '...мелодия ускоряется... детский смех... затем тишина...',
-                '...голос: "спасибо за музыку... мы помним..."',
-                '...статический шум усиливается... звук разбитого стекла...'
-            ]
-        },
-        '112.3': {
-            id: 'weather',
-            name: 'Автоматическая метеостанция',
-            text: '...автоматический голос: "Температура: -273°C. Давление: 0 гПа. Ветер: отсутствует. Условия: АБСОЛЮТНЫЙ НУЛЬ..."',
-            tags: ['ДАННЫЕ', 'АНОМАЛИЯ', 'НАУКА'],
-            risk: 2,
-            discoverDay: 2,
-            responses: [
-                '...сигнал прерывается... "ОШИБКА: ДАТЧИКИ ОТКАЗАЛИ..."',
-                '...новые данные: "Температура поднимается... что-то приближается..."',
-                '...последнее сообщение: "БЕГИТЕ..."'
-            ]
-        },
-        '66.6': {
-            id: 'scientist',
-            name: 'Доктор Ричардс',
-            text: '...если кто-то слышит... проект "Резонанс" вышел из-под контроля... мы создали "Эхо-призраков"... они питаются вниманием...',
-            tags: ['УЧЁНЫЙ', 'ВИНА', 'ИСТИНА'],
-            risk: 4,
-            discoverDay: 3,
-            responses: [
-                '...спасибо за ответ... найдите лабораторию... остановите генератор...',
-                '...я виноват... простите...',
-                '...они идут за мной... прощайте... *выстрел*...'
-            ]
-        },
-        '101.1': {
-            id: 'children',
-            name: 'Лесной Лагерь',
-            text: '...шепотом: "Тихие близко... держимся за руки... помни правила: не кричи, шепчи. Не беги, крадись. Свет привлекает Их..."',
-            tags: ['ДЕТИ', 'ВЫЖИВШИЕ', 'ОПАСНОСТЬ'],
-            risk: 3,
-            discoverDay: 4,
-            responses: [
-                '...спасибо... мы слышали ваши передачи... вы даёте надежду...',
-                '...один из нас пропал... мы идём на север...',
-                '...мы нашли убежище... спасибо... *детский смех*...'
-            ]
-        },
-        '189.0': {
-            id: 'nomad',
-            name: 'Кочевник',
-            text: '...приём? Это "Скиталец"... нашёл лабораторию "Резонанса"... Тихие - не существа... они стоячие звуковые волны... звуковые призраки...',
-            tags: ['ВЫЖИВШИЙ', 'ИССЛЕДОВАТЕЛЬ', 'ПРАВДА'],
-            risk: 5,
-            discoverDay: 5,
-            responses: [
-                '...лаборатория взорвана... данные сохранены... иду к вам...',
-                '...вижу вашу станцию... готовлюсь к штурму...',
-                '...они везде... прощай, оператор...'
-            ]
-        },
-        '0.0': {
-            id: 'zero',
-            name: 'Нулевая Точка',
-            text: '...Ричардс здесь... протокол Кодаускас готов... усилить все частоты до максимума... создаст звуковую сферу... либо отгоним их навсегда... либо привлечём всех сюда... выбор за вами...',
-            tags: ['ФИНАЛ', 'РЕШЕНИЕ', 'ОТВЕТСТВЕННОСТЬ'],
-            risk: 8,
-            discoverDay: 6,
-            responses: [
-                '...спасибо... активирую протокол...',
-                '...вы сделали правильный выбор... прощайте...',
-                '...сигнал усиливается... мир меняется...'
-            ]
-        }
-    },
-    
-    // Цели для каждого дня (теперь без указания частот)
-    dailyGoals: {
-        1: [
-            { id: 'day1_goal1', text: 'Найти первую аномальную частоту', type: 'frequency', target: 'any' },
-            { id: 'day1_goal2', text: 'Записать обнаруженную передачу', type: 'record', target: 'any' },
-            { id: 'day1_goal3', text: 'Отправить первый ответ', type: 'response', target: 'any' }
-        ],
-        2: [
-            { id: 'day2_goal1', text: 'Найти источник аномальных данных', type: 'frequency', target: 'any_new' },
-            { id: 'day2_goal2', text: 'Проанализировать найденный сигнал', type: 'analyze', target: 'any' },
-            { id: 'day2_goal3', text: 'Поддерживать низкий уровень риска (< 3)', type: 'risk', target: '3' }
-        ],
-        3: [
-            { id: 'day3_goal1', text: 'Найти следы учёных', type: 'frequency', target: 'any_new' },
-            { id: 'day3_goal2', text: 'Получить ответ на свои вопросы', type: 'response', target: 'any' },
-            { id: 'day3_goal3', text: 'Создать 2 закладки для важных частот', type: 'bookmarks', target: '2' }
-        ],
-        4: [
-            { id: 'day4_goal1', text: 'Найти выживших', type: 'frequency', target: 'any_new' },
-            { id: 'day4_goal2', text: 'Помочь выжившим советом', type: 'response', target: 'any' },
-            { id: 'day4_goal3', text: 'Исследовать половину доступного спектра', type: 'progress', target: '50' }
-        ],
-        5: [
-            { id: 'day5_goal1', text: 'Найти исследователя', type: 'frequency', target: 'any_new' },
-            { id: 'day5_goal2', text: 'Узнать правду о катастрофе', type: 'analyze', target: 'any' },
-            { id: 'day5_goal3', text: 'Получить ответы от 3 разных источников', type: 'responses_total', target: '3' }
-        ],
-        6: [
-            { id: 'day6_goal1', text: 'Найти нулевую точку', type: 'frequency', target: 'any_new' },
-            { id: 'day6_goal2', text: 'Подготовить финальное решение', type: 'event', target: 'day6_final' },
-            { id: 'day6_goal3', text: 'Найти все аномальные частоты (6 штук)', type: 'all_frequencies', target: '6' }
-        ]
-    },
-    
-    // События по дням
-    dailyEvents: {
-        1: {
-            id: 'start',
-            title: 'АКТИВАЦИЯ СТАНЦИИ',
-            text: 'Станция "Голос Надежды" онлайн. Все системы работают.\n\nДЕНЬ 1 ИЗ 6\n\nВаша миссия: сканировать эфир, находить выживших и понять, что произошло. Каждый день ставит новые цели. У вас есть 5 минут реального времени на каждый игровой день.\n\nВнимание: частоты не указаны - вам нужно искать их самостоятельно.',
-            type: 'info'
-        },
-        2: {
-            id: 'day2_warning',
-            title: 'РАСТУЩАЯ УГРОЗА',
-            text: 'Уровень риска растёт. "Тихие" становятся активнее ночью.\n\nСОВЕТ: Попробуйте сканировать диапазон 100-130 МГц. Там часто встречаются автоматические станции.',
-            type: 'warning'
-        },
-        3: {
-            id: 'day3_discovery',
-            title: 'РАСКРЫТИЕ ПРАВДЫ',
-            text: 'Вы нашли запись учёного. Теперь вы знаете причину катастрофы. "Тихие" - это побочный эффект эксперимента "Резонанс".\n\nСОВЕТ: Попробуйте низкие частоты (30-70 МГц). Там могут быть следы учёных.',
-            type: 'info'
-        },
-        4: {
-            id: 'day4_choice',
-            title: 'МОРАЛЬНЫЙ ВЫБОР',
-            text: 'Вы нашли детей. Они просят помощи. Ваш выбор определит их судьбу.\n\n1. Дать им координаты безопасного места (риск: средний)\n2. Посоветовать оставаться на месте (риск: низкий)\n3. Игнорировать (риск: высокий)',
-            type: 'choice',
-            options: [
-                { text: 'ДАЙТЕ КООРДИНАТЫ', action: 'help_children', risk: 3, points: 15 },
-                { text: 'ОСТАВАЙТЕСЬ НА МЕСТЕ', action: 'advise_stay', risk: 1, points: 10 },
-                { text: 'ИГНОРИРОВАТЬ', action: 'ignore', risk: 5, points: 5 }
-            ]
-        },
-        5: {
-            id: 'day5_nomad',
-            title: 'КОЧЕВНИК В ОПАСНОСТИ',
-            text: 'Кочевник попал в засаду "Тихих". Его сигнал прерывается.\n\nСОВЕТ: Ищите в диапазоне 180-200 МГц. Там может быть его аварийный маяк.',
-            type: 'emergency',
-            options: [
-                { text: 'ИСКАТЬ МАЯК', action: 'search_beacon', risk: 4, points: 20 },
-                { text: 'ПРОИГНОРИРОВАТЬ', action: 'ignore_nomad', risk: 2, points: 5 }
-            ]
-        },
-        6: {
-            id: 'day6_final',
-            title: 'ВСЕ ДАННЫЕ СОБРАНЫ',
-            text: 'Вы нашли все частоты. Вы услышали все голоса. Пришло время принять финальное решение о будущем мира.\n\nЧто вы выберете?',
-            type: 'final',
-            options: [
-                { 
-                    text: 'АКТИВИРОВАТЬ ПРОТОКОЛ (ЖЕРТВА)', 
-                    action: 'activate_protocol', 
-                    description: 'Усилить сигнал станции, привлечь всех "Тихых" и уничтожить их. Вы погибнете, но мир будет спасён.' 
-                },
-                { 
-                    text: 'ЗАГЛУШИТЬ ЧАСТОТЫ (ИЗОЛЯЦИЯ)', 
-                    action: 'silence_frequencies', 
-                    description: 'Отключить все передатчики. Мир останется опасным, но выжившие смогут скрываться.' 
-                },
-                { 
-                    text: 'ПЕРЕНАПРАВИТЬ ЭНЕРГИЮ (СИМБИОЗ)', 
-                    action: 'redirect_energy', 
-                    description: 'Использовать данные учёного, чтобы стабилизировать "Тихих". Новый мир, новая реальность.' 
-                }
-            ]
-        }
-    }
-};
+// Функция для округления чисел
+function roundNumber(num) {
+    return Math.round(num);
+}
 
-// ===== DOM ЭЛЕМЕНТЫ =====
-const ELEMENTS = {
-    // Частота
-    digit1: document.getElementById('digit1'),
-    digit2: document.getElementById('digit2'),
-    digit3: document.getElementById('digit3'),
-    digit4: document.getElementById('digit4'),
-    
-    // Статус
-    day: document.getElementById('day'),
-    time: document.getElementById('time'),
-    risk: document.getElementById('risk'),
-    power: document.getElementById('power'),
-    
-    // Сигнал
-    signalBar: document.getElementById('signal-bar'),
-    signalText: document.getElementById('signal-text'),
-    
-    // Передача
-    sourceName: document.getElementById('source-name'),
-    transmissionText: document.getElementById('transmission-text'),
-    transmissionTags: document.getElementById('transmission-tags'),
-    transmissionRisk: document.getElementById('transmission-risk'),
-    
-    // Цели
-    dayGoals: document.getElementById('day-goals'),
-    goalsList: document.getElementById('goals-list'),
-    dayProgress: document.getElementById('day-progress'),
-    
-    // Прогресс
-    discovered: document.getElementById('discovered'),
-    progressFill: document.getElementById('progress-fill'),
-    progressPercent: document.getElementById('progress-percent'),
-    bookmarksCount: document.getElementById('bookmarks-count'),
-    
-    // Журнал
-    logContent: document.getElementById('log-content'),
-    logCount: document.getElementById('log-count'),
-    playerNotes: document.getElementById('player-notes'),
-    charCount: document.getElementById('char-count'),
-    
-    // Закладки
-    bookmarksList: document.getElementById('bookmarks-list'),
-    
-    // Управление
-    knob: document.getElementById('knob'),
-    knobValue: document.getElementById('knob-value'),
-    scanUp: document.getElementById('scan-up'),
-    scanDown: document.getElementById('scan-down'),
-    lock: document.getElementById('lock'),
-    record: document.getElementById('record'),
-    analyze: document.getElementById('analyze'),
-    emergency: document.getElementById('emergency'),
-    bookmark: document.getElementById('bookmark'),
-    respond: document.getElementById('respond'),
-    decode: document.getElementById('decode'),
-    
-    // Слайдеры
-    volume: document.getElementById('volume'),
-    volumeValue: document.getElementById('volume-value'),
-    filter: document.getElementById('filter'),
-    filterValue: document.getElementById('filter-value'),
-    
-    // Модальные окна
-    modal: document.getElementById('modal'),
-    modalTitle: document.getElementById('modal-title'),
-    modalText: document.getElementById('modal-text'),
-    modalOptions: document.getElementById('modal-options'),
-    modalClose: document.getElementById('modal-close'),
-    
-    // Финальный экран
-    endingScreen: document.getElementById('ending-screen'),
-    endingTitle: document.getElementById('ending-title'),
-    endingText: document.getElementById('ending-text'),
-    endingStats: document.getElementById('ending-stats'),
-    endingRestart: document.getElementById('ending-restart'),
-    endingContinue: document.getElementById('ending-continue'),
-    
-    // Canvas
-    spectrum: document.getElementById('spectrum'),
-    spectrumMode: document.getElementById('spectrum-mode')
-};
+// Функция для форматирования чисел (убираем дробную часть)
+function formatNumber(num) {
+    return Math.floor(num);
+}
 
-// ===== ИНИЦИАЛИЗАЦИЯ =====
-function init() {
-    console.log('Initializing Last Broadcast v2.2...');
+// Инициализация игры
+function initGame() {
+    console.log("Инициализация игры...");
     
-    // Загрузка сохранения
-    loadGame();
+    canvas = document.getElementById('gameCanvas');
+    ctx = canvas.getContext('2d');
     
-    // Настройка обработчиков
-    setupEventListeners();
+    // Запрещаем выделение текста на всей странице
+    document.addEventListener('selectstart', function(e) {
+        e.preventDefault();
+    });
     
-    // Инициализация canvas
-    initCanvas();
+    // Запрещаем контекстное меню (ПКМ) на всей странице
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+    });
     
-    // Обновление интерфейса
-    updateFrequencyDisplay();
-    updateGameInfo();
-    updateGoals();
-    updateProgress();
-    updateLog();
-    updateBookmarks();
+    // Запрещаем ПКМ на canvas
+    canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+    });
     
-    // Запуск игрового цикла
-    GameState.lastUpdate = Date.now();
+    // Устанавливаем стили для запрета выделения
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+    document.body.style.mozUserSelect = 'none';
+    document.body.style.msUserSelect = 'none';
+    
+    // Устанавливаем размеры canvas
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Обновление рекорда
+    document.getElementById('highScoreValue').textContent = highScore;
+    
+    // Обработчики событий клавиатуры
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    
+    // Обработчик событий мыши
+    canvas.addEventListener('click', handleManualShoot);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    
+    // Создаем начальные звезды для фона
+    createStars();
+    
+    // Запуск игрового цикла с фиксированным временным шагом
+    lastTime = performance.now();
     requestAnimationFrame(gameLoop);
     
-    // Автосохранение
-    setInterval(saveGame, 30000);
-    
-    // Стартовое событие
-    setTimeout(() => triggerEvent('start'), 1000);
-    
-    console.log('Game initialized');
+    console.log("Игра инициализирована");
 }
 
-// ===== ОБРАБОТЧИКИ СОБЫТИЙ =====
-function setupEventListeners() {
-    // Крутилка мыши
-    ELEMENTS.knob.addEventListener('mousedown', startDrag);
-    document.addEventListener('mousemove', handleDrag);
-    document.addEventListener('mouseup', stopDrag);
+// Изменение размера canvas
+function resizeCanvas() {
+    const gameArea = document.querySelector('.game-area');
+    const width = gameArea.clientWidth;
+    const height = gameArea.clientHeight - 70; // Учитываем место для controls-info
     
-    // Крутилка для тач-устройств
-    ELEMENTS.knob.addEventListener('touchstart', startDragTouch);
-    document.addEventListener('touchmove', handleDragTouch);
-    document.addEventListener('touchend', stopDrag);
+    canvas.width = width;
+    canvas.height = Math.max(height, 300);
     
-    // Кнопки сканирования
-    ELEMENTS.scanUp.addEventListener('click', () => {
-        setFrequency(GameState.currentFrequency + CONFIG.FREQ_STEP);
-        playSound('click');
-    });
-    
-    ELEMENTS.scanDown.addEventListener('click', () => {
-        setFrequency(GameState.currentFrequency - CONFIG.FREQ_STEP);
-        playSound('click');
-    });
-    
-    ELEMENTS.lock.addEventListener('click', () => {
-        const freq = GameState.currentFrequency.toFixed(1);
-        const transmission = DATABASE.frequencies[freq];
-        if (transmission && !GameState.bookmarks.some(b => b.frequency === freq)) {
-            addBookmark(freq, transmission.name);
-            addLogEntry(`Закладка добавлена: ${freq} МГц - "${transmission.name}"`);
-            playSound('beep');
-        }
-    });
-    
-    // Кнопки действий
-    ELEMENTS.record.addEventListener('click', () => {
-        const freq = GameState.currentFrequency.toFixed(1);
-        const transmission = DATABASE.frequencies[freq];
-        if (transmission) {
-            addLogEntry(`Записана передача: "${transmission.name}" на ${freq} МГц`);
-            addPoints(CONFIG.DISCOVERY_POINTS);
-            
-            // Проверка цели "записать передачу"
-            checkGoalCompletion('record', 'any');
-            
-            playSound('beep');
-        }
-    });
-    
-    ELEMENTS.analyze.addEventListener('click', () => {
-        const freq = GameState.currentFrequency.toFixed(1);
-        const transmission = DATABASE.frequencies[freq];
-        if (transmission) {
-            showAnalysis(transmission);
-            
-            // Проверка цели "проанализировать"
-            checkGoalCompletion('analyze', 'any');
-            
-            playSound('click');
-        }
-    });
-    
-    ELEMENTS.emergency.addEventListener('click', () => {
-        showModal('АВАРИЙНОЕ ОТКЛЮЧЕНИЕ', 
-            'Все системы будут отключены на 1 час.\nРиск снизится, но вы потеряете энергию и время.\n\nПродолжить?',
-            [
-                { text: 'ПОДТВЕРДИТЬ', action: () => {
-                    GameState.power = Math.max(0, GameState.power - 30);
-                    GameState.risk = Math.max(0, GameState.risk - 5);
-                    addLogEntry('Аварийное отключение активировано. Риск снижен.');
-                    playSound('beep');
-                }},
-                { text: 'ОТМЕНА', action: () => playSound('click') }
-            ]
-        );
-    });
-    
-    ELEMENTS.bookmark.addEventListener('click', () => {
-        const freq = GameState.currentFrequency.toFixed(1);
-        const transmission = DATABASE.frequencies[freq];
-        if (transmission) {
-            addBookmark(freq, transmission.name);
-            playSound('beep');
-        }
-    });
-    
-    ELEMENTS.respond.addEventListener('click', () => {
-        const freq = GameState.currentFrequency.toFixed(1);
-        const transmission = DATABASE.frequencies[freq];
-        if (transmission) {
-            sendResponse(freq, transmission);
-            playSound('click');
-        }
-    });
-    
-    ELEMENTS.decode.addEventListener('click', () => {
-        showDecodingGame();
-        playSound('click');
-    });
-    
-    // Ползунки
-    ELEMENTS.volume.addEventListener('input', () => {
-        ELEMENTS.volumeValue.textContent = `${ELEMENTS.volume.value}%`;
-    });
-    
-    ELEMENTS.filter.addEventListener('input', () => {
-        ELEMENTS.filterValue.textContent = `${ELEMENTS.filter.value}%`;
-    });
-    
-    // Заметки
-    ELEMENTS.playerNotes.addEventListener('input', () => {
-        GameState.playerNotes = ELEMENTS.playerNotes.value;
-        ELEMENTS.charCount.textContent = `${GameState.playerNotes.length}/500`;
-    });
-    
-    // Очистка журнала
-    document.getElementById('clear-log')?.addEventListener('click', () => {
-        showModal('ОЧИСТКА ЖУРНАЛА', 
-            'Удалить все записи журнала?\nЭто действие нельзя отменить.',
-            [
-                { text: 'ОЧИСТИТЬ', action: () => {
-                    GameState.logEntries = [];
-                    updateLog();
-                    playSound('beep');
-                }},
-                { text: 'ОТМЕНА', action: () => playSound('click') }
-            ]
-        );
-    });
-    
-    // Сохранение заметок
-    document.getElementById('save-note')?.addEventListener('click', () => {
-        saveGame();
-        const btn = document.getElementById('save-note');
-        btn.textContent = '💾 СОХРАНЕНО';
-        setTimeout(() => btn.textContent = '💾', 1000);
-        playSound('beep');
-    });
-    
-    // Модальное окно
-    ELEMENTS.modalClose.addEventListener('click', () => {
-        ELEMENTS.modal.style.display = 'none';
-        playSound('click');
-    });
-    
-    // Финальный экран
-    ELEMENTS.endingRestart.addEventListener('click', () => {
-        if (confirm('Начать новую игру? Текущий прогресс будет потерян.')) {
-            resetGame();
-        }
-    });
-    
-    ELEMENTS.endingContinue.addEventListener('click', () => {
-        ELEMENTS.endingScreen.style.display = 'none';
-    });
-    
-    // Горячие клавиши
-    document.addEventListener('keydown', (e) => {
-        if (!e.ctrlKey && !e.metaKey) {
-            switch(e.key) {
-                case 'ArrowUp':
-                    e.preventDefault();
-                    setFrequency(GameState.currentFrequency + CONFIG.FREQ_STEP);
-                    break;
-                case 'ArrowDown':
-                    e.preventDefault();
-                    setFrequency(GameState.currentFrequency - CONFIG.FREQ_STEP);
-                    break;
-                case ' ':
-                    e.preventDefault();
-                    ELEMENTS.record.click();
-                    break;
-                case 'r':
-                    if (e.shiftKey) {
-                        e.preventDefault();
-                        ELEMENTS.emergency.click();
-                    }
-                    break;
-                case 's':
-                    if (e.shiftKey) {
-                        e.preventDefault();
-                        saveGame();
-                    }
-                    break;
-            }
-        }
-    });
-    
-    // Автосохранение при закрытии
-    window.addEventListener('beforeunload', saveGame);
+    // Пересчитываем позицию игрока
+    if (player.x > canvas.width - player.radius) player.x = canvas.width - player.radius;
+    if (player.y > canvas.height - player.radius) player.y = canvas.height - player.radius;
+    if (player.x < player.radius) player.x = player.radius;
+    if (player.y < player.radius) player.y = player.radius;
 }
 
-// ===== УПРАВЛЕНИЕ КРУТИЛКОЙ =====
-function startDrag(e) {
-    e.preventDefault();
-    GameState.isDragging = true;
-    GameState.dragStart = {
-        x: e.clientX,
-        y: e.clientY,
-        freq: GameState.currentFrequency
-    };
-    document.body.style.cursor = 'grabbing';
-    playSound('click');
-}
-
-function startDragTouch(e) {
-    e.preventDefault();
-    if (e.touches.length === 1) {
-        GameState.isDragging = true;
-        GameState.dragStart = {
-            x: e.touches[0].clientX,
-            y: e.touches[0].clientY,
-            freq: GameState.currentFrequency
-        };
-        playSound('click');
-    }
-}
-
-function handleDrag(e) {
-    if (!GameState.isDragging) return;
-    
-    const deltaX = e.clientX - GameState.dragStart.x;
-    const deltaY = GameState.dragStart.y - e.clientY; // Инвертируем для интуитивности
-    const delta = (deltaX + deltaY) * 0.15;
-    
-    setFrequency(GameState.dragStart.freq + delta);
-    e.preventDefault();
-}
-
-function handleDragTouch(e) {
-    if (!GameState.isDragging || e.touches.length !== 1) return;
-    
-    const deltaX = e.touches[0].clientX - GameState.dragStart.x;
-    const deltaY = GameState.dragStart.y - e.touches[0].clientY;
-    const delta = (deltaX + deltaY) * 0.25;
-    
-    setFrequency(GameState.dragStart.freq + delta);
-    e.preventDefault();
-}
-
-function stopDrag() {
-    if (GameState.isDragging) {
-        GameState.isDragging = false;
-        document.body.style.cursor = '';
-        playSound('click');
-    }
-}
-
-// ===== ОСНОВНЫЕ ФУНКЦИИ ИГРЫ =====
-function setFrequency(freq) {
-    // Ограничение диапазона
-    freq = Math.max(CONFIG.FREQ_MIN, Math.min(CONFIG.FREQ_MAX, freq));
-    freq = Math.round(freq * 10) / 10; // Округление до 0.1
-    
-    GameState.currentFrequency = freq;
-    
-    // Обновление интерфейса
-    updateFrequencyDisplay();
-    
-    // Увеличение риска при активном сканировании
-    GameState.risk = Math.min(CONFIG.MAX_RISK, GameState.risk + 0.01);
-    
-    // Проверка обнаружения частоты
-    checkFrequencyDiscovery();
-    
-    return freq;
-}
-
-function checkFrequencyDiscovery() {
-    const freq = GameState.currentFrequency.toFixed(1);
-    const transmission = DATABASE.frequencies[freq];
-    
-    if (transmission && !GameState.discoveredFrequencies.has(freq)) {
-        // Обнаружена новая частота
-        GameState.discoveredFrequencies.add(freq);
-        GameState.transmissionsFound.set(freq, {
-            time: Date.now(),
-            day: GameState.day,
-            responses: 0
-        });
-        
-        // Добавление очков
-        addPoints(CONFIG.DISCOVERY_POINTS);
-        
-        // Обновление интерфейса
-        updateProgress();
-        
-        // Звук обнаружения
-        playSound('discovery');
-        
-        // Запись в журнал (БЕЗ указания частоты!)
-        addLogEntry(`Обнаружена новая передача: "${transmission.name}"`);
-        
-        // Проверка цели "найти частоту"
-        checkGoalCompletion('frequency', 'any');
-        
-        // Проверка цели "найти новую частоту"
-        if (GameState.day > 1) {
-            checkGoalCompletion('frequency', 'any_new');
-        }
-        
-        // Проверка если нашли все частоты
-        if (GameState.discoveredFrequencies.size >= 6) {
-            checkGoalCompletion('all_frequencies', '6');
-        }
-        
-        updateTransmissionInfo();
-        
-        return true;
-    }
-    
-    return false;
-}
-function sendResponse(freq, transmission) {
-    if (!transmission || !transmission.responses) {
-        return false;
-    }
-    
-    // Получаем текущее количество ответов для этой частоты
-    let responseCount = GameState.responses.get(freq) || 0;
-    
-    // Проверяем, есть ли еще доступные ответы
-    if (responseCount < 3 && transmission.responses[responseCount]) {
-        // Увеличение счетчика ответов
-        responseCount++;
-        GameState.responses.set(freq, responseCount);
-        
-        // Добавление очков
-        addPoints(CONFIG.RESPONSE_POINTS);
-        
-        // Увеличение риска
-        GameState.risk = Math.min(CONFIG.MAX_RISK, GameState.risk + transmission.risk * 0.5);
-        
-        // Запись в журнал
-        addLogEntry(`Получен ответ от "${transmission.name}": ${transmission.responses[responseCount - 1]}`);
-        
-        // Показываем ответ в интерфейсе
-        ELEMENTS.transmissionText.textContent = transmission.responses[responseCount - 1];
-        
-        // Обновление интерфейса
-        updateProgress();
-        updateTransmissionInfo(); // Важно: обновляем интерфейс частоты
-        
-        // Проверка целей
-        checkGoalCompletion('response', 'any');
-        
-        // Проверка общего количества ответов
-        const totalResponses = Array.from(GameState.responses.values()).reduce((a, b) => a + b, 0);
-        if (totalResponses >= 3) {
-            checkGoalCompletion('responses_total', '3');
-        }
-        
-        // Звук
-        playSound('response');
-        
-        return true;
-    }
-    
-    return false;
-}
-
-function addPoints(points) {
-    GameState.dayPoints += points;
-    GameState.totalPoints += points;
-    updateGoals();
-}
-
-function checkGoalCompletion(type, target) {
-    const day = GameState.day;
-    const goals = DATABASE.dailyGoals[day] || [];
-    
-    goals.forEach(goal => {
-        if (!GameState.goalsCompleted.has(goal.id) && goal.type === type) {
-            let completed = false;
-            
-            switch(type) {
-                case 'frequency':
-                    if (target === 'any') {
-                        // Любая частота
-                        completed = GameState.discoveredFrequencies.size > 0;
-                    } else if (target === 'any_new') {
-                        // Новая частота в текущем дне
-                        const frequenciesForDay = Array.from(GameState.discoveredFrequencies).filter(freq => {
-                            const transmission = DATABASE.frequencies[freq];
-                            return transmission && transmission.discoverDay === day;
-                        });
-                        completed = frequenciesForDay.length > 0;
-                    }
-                    break;
-                    
-                case 'record':
-                    completed = true; // Если игрок нажал кнопку записи
-                    break;
-                    
-                case 'response':
-                    if (target === 'any') {
-                        completed = GameState.responses.size > 0;
-                    }
-                    break;
-                    
-                case 'analyze':
-                    completed = true; // Если игрок нажал кнопку анализа
-                    break;
-                    
-                case 'risk':
-                    completed = GameState.risk <= parseFloat(target);
-                    break;
-                    
-                case 'bookmarks':
-                    completed = GameState.bookmarks.length >= parseInt(target);
-                    break;
-                    
-                case 'progress':
-                    const progress = (GameState.discoveredFrequencies.size / 6) * 100;
-                    completed = progress >= parseFloat(target);
-                    break;
-                    
-                case 'responses_total':
-                    const total = Array.from(GameState.responses.values()).reduce((a, b) => a + b, 0);
-                    completed = total >= parseInt(target);
-                    break;
-                    
-                case 'all_frequencies':
-                    completed = GameState.discoveredFrequencies.size >= parseInt(target);
-                    break;
-                    
-                case 'event':
-                    completed = GameState.eventsTriggered.has(target);
-                    break;
-            }
-            
-            if (completed) {
-                GameState.goalsCompleted.add(goal.id);
-                addPoints(CONFIG.GOAL_POINTS);
-                addLogEntry(`Цель выполнена: ${goal.text}`);
-                playSound('goal');
-                updateGoals();
-            }
-        }
-    });
-}
-
-function triggerEvent(eventId) {
-    if (GameState.eventsTriggered.has(eventId)) return;
-    
-    const event = DATABASE.dailyEvents[GameState.day];
-    if (!event || event.id !== eventId) return;
-    
-    GameState.eventsTriggered.add(eventId);
-    GameState.currentEvent = event;
-    
-    showEventModal(event);
-    
-    // Проверка цели на событие
-    if (eventId === 'day6_final') {
-        checkGoalCompletion('event', 'day6_final');
-    }
-    
-    return event;
-}
-
-// ===== ОБНОВЛЕНИЕ ИНТЕРФЕЙСА =====
-function updateFrequencyDisplay() {
-    const freq = GameState.currentFrequency.toFixed(1);
-    
-    // Разделяем частоту на цифры
-    const [whole, decimal] = freq.split('.');
-    
-    // Обрабатываем целую часть
-    let wholeDigits;
-    if (whole.length === 1) {
-        wholeDigits = '00' + whole; // Например, 0 → 000
-    } else if (whole.length === 2) {
-        wholeDigits = '0' + whole; // Например, 98 → 098
-    } else {
-        wholeDigits = whole; // Например, 189 → 189
-    }
-    
-    // Обновление цифр
-    ELEMENTS.digit1.textContent = wholeDigits[0];
-    ELEMENTS.digit2.textContent = wholeDigits[1];
-    ELEMENTS.digit3.textContent = wholeDigits[2];
-    ELEMENTS.digit4.textContent = decimal || '0';
-    
-    // Обновление крутилки
-    const rotation = ((GameState.currentFrequency - CONFIG.FREQ_MIN) / 
-                     (CONFIG.FREQ_MAX - CONFIG.FREQ_MIN)) * 360;
-    ELEMENTS.knob.style.transform = `rotate(${rotation}deg)`;
-    ELEMENTS.knobValue.textContent = `↻ ${Math.round(rotation)}°`;
-    
-    // Обновление информации о передаче
-    updateTransmissionInfo();
-}
-
-function updateTransmissionInfo() {
-    const freq = GameState.currentFrequency.toFixed(1);
-    const transmission = DATABASE.frequencies[freq];
-    
-    if (transmission) {
-        // Есть передача
-        ELEMENTS.sourceName.textContent = transmission.name;
-        
-        // Определяем какой текст показывать (базовый или ответ)
-        let textToShow = transmission.text;
-        const responseCount = GameState.responses.get(freq) || 0;
-        
-        if (responseCount > 0 && transmission.responses) {
-            // Показываем последний полученный ответ
-            textToShow = transmission.responses[responseCount - 1];
-        }
-        
-        ELEMENTS.transmissionText.textContent = textToShow;
-        ELEMENTS.transmissionRisk.textContent = getRiskText(transmission.risk);
-        ELEMENTS.transmissionRisk.style.color = getRiskColor(transmission.risk);
-        
-        // Обновление тегов
-        ELEMENTS.transmissionTags.innerHTML = '';
-        transmission.tags.forEach(tag => {
-            const tagEl = document.createElement('span');
-            tagEl.className = 'tag';
-            tagEl.textContent = tag;
-            ELEMENTS.transmissionTags.appendChild(tagEl);
-        });
-        
-        // Сигнал сильный
-        const strength = 70 + transmission.risk * 3;
-        ELEMENTS.signalBar.style.width = `${strength}%`;
-        ELEMENTS.signalText.textContent = getSignalText(strength);
-        ELEMENTS.signalText.style.color = getSignalColor(strength);
-        
-        // Включение кнопок
-        ELEMENTS.record.disabled = false;
-        ELEMENTS.analyze.disabled = false;
-        ELEMENTS.bookmark.disabled = GameState.bookmarks.some(b => b.frequency === freq);
-        
-        // Кнопка ответа - показываем правильный счетчик
-        ELEMENTS.respond.disabled = responseCount >= 3;
-        ELEMENTS.respond.innerHTML = `<span class="btn-icon">📤</span><span>ОТВЕТ (${responseCount}/3)</span>`;
-        
-        ELEMENTS.decode.disabled = false;
-    } else {
-        // Нет передачи
-        ELEMENTS.sourceName.textContent = '—';
-        ELEMENTS.transmissionText.textContent = getNoiseText();
-        ELEMENTS.transmissionRisk.textContent = 'БЕЗОП.';
-        ELEMENTS.transmissionRisk.style.color = '#4aff9a';
-        
-        // Теги помех
-        ELEMENTS.transmissionTags.innerHTML = '<span class="tag">ПОМЕХИ</span><span class="tag">ФОН</span>';
-        
-        // Слабый сигнал
-        const strength = Math.random() * 30;
-        ELEMENTS.signalBar.style.width = `${strength}%`;
-        ELEMENTS.signalText.textContent = 'ПОИСК...';
-        ELEMENTS.signalText.style.color = '#ff9a4a';
-        
-        // Отключение кнопок
-        ELEMENTS.record.disabled = true;
-        ELEMENTS.analyze.disabled = true;
-        ELEMENTS.bookmark.disabled = true;
-        ELEMENTS.respond.disabled = true;
-        ELEMENTS.decode.disabled = true;
-    }
-}
-
-function updateGameInfo() {
-    // День и время
-    ELEMENTS.day.textContent = GameState.day;
-    
-    const timeLeft = CONFIG.DAY_DURATION - GameState.gameTime;
-    const minutesLeft = Math.floor(timeLeft / 60);
-    const secondsLeft = Math.floor(timeLeft % 60);
-    ELEMENTS.time.textContent = `${minutesLeft.toString().padStart(2, '0')}:${secondsLeft.toString().padStart(2, '0')}`;
-    
-    // Риск
-    ELEMENTS.risk.textContent = GameState.risk.toFixed(1);
-    ELEMENTS.risk.style.color = getRiskColor(GameState.risk);
-    
-    // Энергия
-    ELEMENTS.power.textContent = `${Math.round(GameState.power)}%`;
-    ELEMENTS.power.style.color = GameState.power > 30 ? '#4aff9a' : 
-                                 GameState.power > 10 ? '#ff9a4a' : '#ff4a6a';
-}
-
-function updateGoals() {
-    const day = GameState.day;
-    const goals = DATABASE.dailyGoals[day] || [];
-    
-    ELEMENTS.goalsList.innerHTML = '';
-    
-    let completedCount = 0;
-    
-    goals.forEach(goal => {
-        const isCompleted = GameState.goalsCompleted.has(goal.id);
-        
-        const goalEl = document.createElement('div');
-        goalEl.className = `goal-item ${isCompleted ? 'completed' : ''}`;
-        goalEl.textContent = goal.text;
-        
-        ELEMENTS.goalsList.appendChild(goalEl);
-        
-        if (isCompleted) completedCount++;
-    });
-    
-    ELEMENTS.dayGoals.textContent = `${completedCount}/${goals.length}`;
-    
-    // Прогресс дня
-    const dayProgress = (completedCount / Math.max(1, goals.length)) * 100;
-    ELEMENTS.dayProgress.style.width = `${dayProgress}%`;
-}
-
-function updateProgress() {
-    // Найдено частот
-    const discoveredCount = GameState.discoveredFrequencies.size;
-    ELEMENTS.discovered.textContent = discoveredCount;
-    
-    // Общий прогресс
-    const totalProgress = (discoveredCount / 6) * 100;
-    ELEMENTS.progressFill.style.width = `${totalProgress}%`;
-    ELEMENTS.progressPercent.textContent = `${Math.round(totalProgress)}%`;
-    
-    // Закладки
-    ELEMENTS.bookmarksCount.textContent = GameState.bookmarks.length;
-}
-
-function updateLog() {
-    ELEMENTS.logContent.innerHTML = '';
-    
-    GameState.logEntries.forEach(entry => {
-        const entryEl = document.createElement('div');
-        entryEl.className = 'log-entry';
-        entryEl.innerHTML = `
-            <div class="log-meta">${entry.time}</div>
-            <div class="log-text">${entry.text}</div>
-        `;
-        ELEMENTS.logContent.appendChild(entryEl);
-    });
-    
-    ELEMENTS.logCount.textContent = `[${GameState.logEntries.length}]`;
-    
-    // Прокрутка вниз
-    ELEMENTS.logContent.scrollTop = ELEMENTS.logContent.scrollHeight;
-}
-
-function updateBookmarks() {
-    ELEMENTS.bookmarksList.innerHTML = '';
-    
-    if (GameState.bookmarks.length === 0) {
-        ELEMENTS.bookmarksList.innerHTML = '<div class="empty-bookmarks">Нет закладок</div>';
-        return;
-    }
-    
-    GameState.bookmarks.forEach(bookmark => {
-        const bookmarkEl = document.createElement('div');
-        bookmarkEl.className = 'bookmark-item';
-        bookmarkEl.innerHTML = `
-            <span class="bookmark-frequency">${bookmark.frequency} МГц</span>
-            <span class="bookmark-name">${bookmark.name}</span>
-        `;
-        
-        bookmarkEl.addEventListener('click', () => {
-            setFrequency(parseFloat(bookmark.frequency));
-            playSound('click');
-        });
-        
-        ELEMENTS.bookmarksList.appendChild(bookmarkEl);
-    });
-}
-
-function addLogEntry(text) {
-    const now = new Date();
-    const time = `ДЕНЬ ${GameState.day} | ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    
-    GameState.logEntries.push({
-        time,
-        text
-    });
-    
-    // Ограничение количества записей
-    if (GameState.logEntries.length > 50) {
-        GameState.logEntries = GameState.logEntries.slice(-50);
-    }
-    
-    updateLog();
-}
-
-function addBookmark(frequency, name) {
-    if (GameState.bookmarks.some(b => b.frequency === frequency)) {
-        return false;
-    }
-    
-    GameState.bookmarks.push({
-        frequency,
-        name,
-        time: Date.now()
-    });
-    
-    updateBookmarks();
-    
-    // Проверка цели на закладки
-    if (GameState.bookmarks.length >= 2) {
-        checkGoalCompletion('bookmarks', '2');
-    }
-    
-    return true;
-}
-
-// ===== МОДАЛЬНЫЕ ОКНА И СОБЫТИЯ =====
-function showModal(title, text, options = []) {
-    ELEMENTS.modalTitle.textContent = title;
-    ELEMENTS.modalText.textContent = text;
-    ELEMENTS.modalOptions.innerHTML = '';
-    
-    if (options.length > 0) {
-        options.forEach(option => {
-            const optionEl = document.createElement('div');
-            optionEl.className = 'modal-option';
-            optionEl.textContent = option.text;
-            optionEl.addEventListener('click', () => {
-                if (option.action) option.action();
-                ELEMENTS.modal.style.display = 'none';
-                playSound('click');
-            });
-            ELEMENTS.modalOptions.appendChild(optionEl);
+// Создание звезд для фона
+function createStars() {
+    stars = [];
+    for (let i = 0; i < 100; i++) {
+        stars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 1.5 + 0.5,
+            speed: Math.random() * 0.3 + 0.1,
+            brightness: Math.random() * 0.5 + 0.5
         });
     }
+}
+
+// Создание босса
+function createBoss() {
+    bossActive = true;
     
-    ELEMENTS.modal.style.display = 'flex';
-}
-
-function showEventModal(event) {
-    if (event.type === 'choice' || event.type === 'emergency' || event.type === 'final') {
-        showModal(event.title, event.text, event.options.map(option => ({
-            text: option.text,
-            action: () => handleEventChoice(option)
-        })));
-    } else {
-        showModal(event.title, event.text);
-    }
-}
-
-function handleEventChoice(option) {
-    if (option.action === 'help_children') {
-        GameState.risk += 3;
-        addPoints(15);
-        addLogEntry('Вы отправили детям координаты безопасного места. Риск увеличен.');
-    } else if (option.action === 'advise_stay') {
-        GameState.risk += 1;
-        addPoints(10);
-        addLogEntry('Вы посоветовали детям оставаться на месте.');
-    } else if (option.action === 'ignore') {
-        GameState.risk += 5;
-        addPoints(5);
-        addLogEntry('Вы проигнорировали просьбу детей. Риск значительно увеличен.');
-    } else if (option.action === 'search_beacon') {
-        GameState.risk += 4;
-        addPoints(20);
-        addLogEntry('Вы нашли аварийный маяк Кочевника и спасли его.');
-    } else if (option.action === 'ignore_nomad') {
-        GameState.risk += 2;
-        addPoints(5);
-        addLogEntry('Вы проигнорировали сигнал бедствия Кочевника.');
-    } else if (option.action.startsWith('activate_') || option.action.startsWith('silence_') || option.action.startsWith('redirect_')) {
-        showEnding(option);
+    // Характеристики босса
+    const bossHealth = 500 + (wave * 100);
+    const bossSpeed = 1.2;
+    
+    // Выбираем случайный тип босса
+    const bossType = Math.floor(Math.random() * 3);
+    let color, attackPattern, name;
+    
+    switch(bossType) {
+        case 0: // Огненный босс
+            color = '#ff3300';
+            attackPattern = 'fireRing';
+            name = 'Огненный титан';
+            break;
+        case 1: // Ледяной босс
+            color = '#0099ff';
+            attackPattern = 'iceSpray';
+            name = 'Ледяной колосс';
+            break;
+        case 2: // Токсичный босс
+            color = '#33ff33';
+            attackPattern = 'poisonSpread';
+            name = 'Токсичный монстр';
+            break;
     }
     
-    // Проверка целей после события
-    checkGoalsAfterEvent();
-}
-
-function checkGoalsAfterEvent() {
-    const day = GameState.day;
-    const goals = DATABASE.dailyGoals[day] || [];
-    
-    goals.forEach(goal => {
-        if (!GameState.goalsCompleted.has(goal.id)) {
-            checkGoalCompletion(goal.type, goal.target);
-        }
-    });
-}
-
-function showAnalysis(transmission) {
-    const analysis = `
-Анализ передачи "${transmission.name}":
-• Уровень риска: ${transmission.risk}/10
-• Теги: ${transmission.tags.join(', ')}
-• Рекомендации: ${getRecommendations(transmission.risk)}
-`;
-    
-    showModal('АНАЛИЗ СИГНАЛА', analysis);
-}
-
-function showDecodingGame() {
-    const codes = ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON'];
-    const code = codes[Math.floor(Math.random() * codes.length)];
-    
-    showModal('ДЕКОДИРОВАНИЕ', 
-        `Расшифруйте скрытый код:\n\n[ ${code.split('').join(' ')} ]\n\nВведите код:`,
-        [
-            { 
-                text: 'ПРОВЕРИТЬ ALPHA', 
-                action: () => checkDecoding('ALPHA', code) 
-            },
-            { 
-                text: 'ПРОВЕРИТЬ BETA', 
-                action: () => checkDecoding('BETA', code) 
-            },
-            { 
-                text: 'ПРОВЕРИТЬ GAMMA', 
-                action: () => checkDecoding('GAMMA', code) 
-            }
-        ]
-    );
-}
-
-function checkDecoding(guess, actual) {
-    if (guess === actual) {
-        addPoints(25);
-        addLogEntry('Код успешно расшифрован! Получены дополнительные данные.');
-        showModal('УСПЕХ', 'Код расшифрован! Получены ценные данные.');
-    } else {
-        GameState.risk += 2;
-        addLogEntry('Неверная расшифровка кода. Риск увеличен.');
-        showModal('ОШИБКА', 'Неверный код. Сигнал потерян.');
-    }
-}
-
-function showEnding(option) {
-    const endings = {
-        'activate_protocol': {
-            title: 'КОНЦОВКА: ПОСЛЕДНЯЯ ПЕСНЯ',
-            text: 'Вы активировали Протокол Кодаускас. Станция "Голос Надежды" взорвалась в оглушительном грохоте, привлекая всех "Тихих" к себе. Ваша жертва очистила эфир. Где-то далеко дети выходят из укрытий. Мир начинает новую жизнь.'
-        },
-        'silence_frequencies': {
-            title: 'КОНЦОВКА: ТИХИЙ УЛЕЙ',
-            text: 'Вы заглушили все частоты и ушли в глубокое подполье. "Тихие" успокоились. Мир замер в хрупком равновесии. Иногда в эфире проскальзывает слабый сигнал — кто-то ещё жив. Выжившие научились существовать в тишине.'
-        },
-        'redirect_energy': {
-            title: 'КОНЦОВКА: НОВАЯ СИМФОНИЯ',
-            text: 'Вы перенаправили энергию, используя данные учёного. "Тихие" обрели стабильную форму — прекрасные, молчаливые сияющие фигуры. Человечество учится сосуществовать с новыми формами жизни. Радио стало инструментом искусства, а не выживания. Новый мир рождается.'
-        }
+    boss = {
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        radius: 40,
+        speed: bossSpeed,
+        health: roundNumber(bossHealth),
+        maxHealth: roundNumber(bossHealth),
+        color: color,
+        damage: 20 + (wave * 3),
+        type: bossType,
+        attackPattern: attackPattern,
+        name: name,
+        lastAttack: 0,
+        attackCooldown: 2000,
+        moveDirectionX: 1,
+        moveDirectionY: 1,
+        moveTimerX: 0,
+        moveTimerY: 0,
+        phase: 1,
+        shield: roundNumber(bossHealth * 0.3),
+        maxShield: roundNumber(bossHealth * 0.3),
+        shieldActive: true,
+        lastShieldRegen: 0,
+        shieldRegen: 0.01
     };
     
-    const ending = endings[option.action] || {
-        title: 'КОНЦОВКА: НЕИЗВЕСТНОСТЬ',
-        text: 'Ваш выбор сделан. Последствия будут.'
-    };
+    showNotification('boss', `БОСС: ${name}!`);
+    createBossAppearanceEffect(boss.x, boss.y, boss.color);
     
-    ELEMENTS.endingTitle.textContent = ending.title;
-    ELEMENTS.endingText.textContent = ending.text;
-    
-    // Статистика
-    const statsHTML = `
-        <h3>СТАТИСТИКА ИГРЫ</h3>
-        <div class="ending-stats-grid">
-            <div class="stat-item">
-                <span class="stat-label">Дней прожито:</span>
-                <span class="stat-value">${GameState.day}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Частот найдено:</span>
-                <span class="stat-value">${GameState.discoveredFrequencies.size}/6</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Ответов получено:</span>
-                <span class="stat-value">${Array.from(GameState.responses.values()).reduce((a, b) => a + b, 0)}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Очков заработано:</span>
-                <span class="stat-value">${GameState.totalPoints}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Целей выполнено:</span>
-                <span class="stat-value">${GameState.goalsCompleted.size}</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Макс. риск:</span>
-                <span class="stat-value">${GameState.risk.toFixed(1)}</span>
-            </div>
-        </div>
-    `;
-    
-    ELEMENTS.endingStats.innerHTML = statsHTML;
-    ELEMENTS.endingScreen.style.display = 'flex';
-    
-    // Остановка игры
-    GameState.gameActive = false;
+    // Запускаем спавн врагов во время босса
+    startBossEnemySpawn();
 }
 
-// ===== ИГРОВОЙ ЦИКЛ =====
-function gameLoop() {
+// Создание эффекта появления босса
+function createBossAppearanceEffect(x, y, color) {
+    for (let i = 0; i < 50; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * 100;
+        const px = x + Math.cos(angle) * distance;
+        const py = y + Math.sin(angle) * distance;
+        
+        particles.push({
+            x: px,
+            y: py,
+            radius: Math.random() * 5 + 2,
+            color: color,
+            speedX: (x - px) * 0.1,
+            speedY: (y - py) * 0.1,
+            life: 60
+        });
+    }
+}
+
+// Атаки босса
+function bossAttack() {
     const now = Date.now();
-    const deltaTime = (now - GameState.lastUpdate) / 1000;
-    GameState.lastUpdate = now;
-    
-    // Обновление времени
-    GameState.gameTime += deltaTime;
-    
-    // Обновление ресурсов
-    updateResources(deltaTime);
-    
-    // Проверка смены дня
-    checkDayProgress();
-    
-    // Проверка событий
-    checkEvents();
-    
-    // Обновление интерфейса
-    updateGameInfo();
-    updateSpectrum();
-    
-    // Проверка условий поражения
-    if (GameState.power <= 0) {
-        gameOver('power');
-        return;
-    }
-    
-    if (GameState.risk >= CONFIG.MAX_RISK) {
-        gameOver('risk');
-        return;
-    }
-    
-    // Следующий кадр
-    if (GameState.gameActive !== false) {
-        requestAnimationFrame(gameLoop);
+    if (now - boss.lastAttack > boss.attackCooldown) {
+        boss.lastAttack = now;
+        
+        switch(boss.attackPattern) {
+            case 'fireRing':
+                createFireRingAttack();
+                break;
+            case 'iceSpray':
+                createIceSprayAttack();
+                break;
+            case 'poisonSpread':
+                createPoisonSpreadAttack();
+                break;
+        }
+        
+        if (soundEnabled) playBossAttackSound();
     }
 }
 
-function updateResources(deltaTime) {
-    // Расход энергии
-    GameState.power = Math.max(0, GameState.power - CONFIG.POWER_DRAIN * deltaTime);
+// Кольцо огня
+function createFireRingAttack() {
+    const numProjectiles = 16;
     
-    // Снижение риска со временем
-    if (GameState.risk > 0) {
-        GameState.risk = Math.max(0, GameState.risk - CONFIG.RISK_DECAY * deltaTime);
+    for (let i = 0; i < numProjectiles; i++) {
+        const angle = (Math.PI * 2 / numProjectiles) * i;
         
-        // Проверка цели на риск
-        if (GameState.risk <= 3) {
-            checkGoalCompletion('risk', '3');
+        bossProjectiles.push({
+            x: boss.x,
+            y: boss.y,
+            radius: 8,
+            speed: 3,
+            damage: 15,
+            angle: angle,
+            color: '#ff3300',
+            type: 'fire',
+            life: 300
+        });
+    }
+}
+
+// Ледяной спрей
+function createIceSprayAttack() {
+    const numProjectiles = 8;
+    const spreadAngle = Math.PI / 3;
+    
+    for (let i = 0; i < numProjectiles; i++) {
+        const baseAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+        const angle = baseAngle + (spreadAngle * (i / (numProjectiles - 1))) - (spreadAngle / 2);
+        
+        bossProjectiles.push({
+            x: boss.x,
+            y: boss.y,
+            radius: 6,
+            speed: 4,
+            damage: 12,
+            angle: angle,
+            color: '#0099ff',
+            type: 'ice',
+            life: 180
+        });
+    }
+}
+
+// Токсичное распространение
+function createPoisonSpreadAttack() {
+    const numProjectiles = 5;
+    
+    for (let i = 0; i < numProjectiles; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 2;
+        
+        bossProjectiles.push({
+            x: boss.x,
+            y: boss.y,
+            radius: 10,
+            speed: speed,
+            damage: 10,
+            angle: angle,
+            color: '#33ff33',
+            type: 'poison',
+            life: 240
+        });
+    }
+}
+
+// Обновление босса
+function updateBoss(deltaTime) {
+    if (!bossActive || !boss) return;
+    
+    const bossSpeed = boss.speed * (deltaTime / 16.67);
+    const margin = boss.radius + 20;
+    
+    // Движение по X
+    boss.moveTimerX += deltaTime;
+    if (boss.moveTimerX > 2000) {
+        boss.moveDirectionX *= -1;
+        boss.moveTimerX = 0;
+    }
+    
+    boss.x += bossSpeed * boss.moveDirectionX;
+    if (boss.x < margin) {
+        boss.x = margin;
+        boss.moveDirectionX = 1;
+        boss.moveTimerX = 0;
+    }
+    if (boss.x > canvas.width - margin) {
+        boss.x = canvas.width - margin;
+        boss.moveDirectionX = -1;
+        boss.moveTimerX = 0;
+    }
+    
+    // Движение по Y
+    boss.moveTimerY += deltaTime;
+    if (boss.moveTimerY > 2000) {
+        boss.moveDirectionY *= -1;
+        boss.moveTimerY = 0;
+    }
+    
+    boss.y += bossSpeed * boss.moveDirectionY;
+    if (boss.y < margin) {
+        boss.y = margin;
+        boss.moveDirectionY = 1;
+        boss.moveTimerY = 0;
+    }
+    if (boss.y > canvas.height - margin) {
+        boss.y = canvas.height - margin;
+        boss.moveDirectionY = -1;
+        boss.moveTimerY = 0;
+    }
+    
+    const now = Date.now();
+    if (now - boss.lastShieldRegen > 2000 && boss.shield < boss.maxShield) {
+        boss.shield += boss.maxShield * boss.shieldRegen;
+        if (boss.shield > boss.maxShield) boss.shield = boss.maxShield;
+        boss.lastShieldRegen = now;
+    }
+    
+    bossAttack();
+    updateBossProjectiles(deltaTime);
+    
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        const distance = Math.sqrt(
+            Math.pow(bullet.x - boss.x, 2) + Math.pow(bullet.y - boss.y, 2)
+        );
+        
+        if (distance < bullet.radius + boss.radius) {
+            if (boss.shieldActive && boss.shield > 0) {
+                boss.shield -= bullet.damage;
+                createParticles(bullet.x, bullet.y, 8, '#4fc3f7');
+                
+                if (boss.shield <= 0) {
+                    boss.shield = 0;
+                    boss.shieldActive = false;
+                    showNotification('boss', 'Щит босса разрушен!');
+                    createParticles(boss.x, boss.y, 25, '#4fc3f7');
+                }
+            } else {
+                boss.health -= bullet.damage;
+                createParticles(bullet.x, bullet.y, 5, boss.color);
+                
+                if (boss.health < boss.maxHealth * 0.5 && boss.phase === 1) {
+                    boss.phase = 2;
+                    boss.attackCooldown = 1500;
+                    boss.speed *= 1.5;
+                    showNotification('boss', 'Босс в ярости!');
+                }
+                
+                if (boss.health < boss.maxHealth * 0.25 && boss.phase === 2) {
+                    boss.phase = 3;
+                    boss.attackCooldown = 1000;
+                    showNotification('boss', 'БОСС В БЕШЕНСТВЕ!');
+                }
+                
+                if (boss.health <= 0) {
+                    defeatBoss();
+                    return;
+                }
+            }
+            
+            bullets.splice(i, 1);
+        }
+    }
+    
+    const distanceToPlayer = Math.sqrt(
+        Math.pow(player.x - boss.x, 2) + Math.pow(player.y - boss.y, 2)
+    );
+    
+    if (distanceToPlayer < player.radius + boss.radius) {
+        if (shieldActive && player.shield > 0) {
+            player.shield -= boss.damage * 2;
+            if (player.shield < 0) player.shield = 0;
+            
+            const pushAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            player.x += Math.cos(pushAngle) * 25;
+            player.y += Math.sin(pushAngle) * 25;
+            
+            createParticles(player.x, player.y, 10, '#4fc3f7');
+        } else {
+            player.health -= boss.damage;
+            
+            const pushAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            player.x += Math.cos(pushAngle) * 30;
+            player.y += Math.sin(pushAngle) * 30;
+            
+            createParticles(player.x, player.y, 12, '#ff0000');
+            
+            if (player.health <= 0) {
+                player.health = 0;
+                lives--;
+                updateLives();
+                
+                if (lives <= 0) {
+                    gameOver();
+                }
+            }
         }
     }
 }
 
-function checkDayProgress() {
-    if (GameState.gameTime >= CONFIG.DAY_DURATION) {
-        // Смена дня
-        GameState.day++;
-        GameState.gameTime = 0;
-        GameState.dayPoints = 0;
+// Обновление снарядов босса
+function updateBossProjectiles(deltaTime) {
+    for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+        const projectile = bossProjectiles[i];
+        const projSpeed = projectile.speed * (deltaTime / 16.67);
         
-        // Увеличение риска с каждым днём
-        GameState.risk += 0.5;
+        projectile.x += Math.cos(projectile.angle) * projSpeed;
+        projectile.y += Math.sin(projectile.angle) * projSpeed;
         
-        // Запись в журнал
-        addLogEntry(`Начинается день ${GameState.day}. Риск увеличивается.`);
+        projectile.life--;
         
-        // Обновление целей
-        updateGoals();
+        const distanceToPlayer = Math.sqrt(
+            Math.pow(player.x - projectile.x, 2) + Math.pow(player.y - projectile.y, 2)
+        );
         
-        // Проверка финального дня
-        if (GameState.day > CONFIG.MAX_DAYS) {
-            gameOver('time');
+        if (distanceToPlayer < player.radius + projectile.radius) {
+            if (shieldActive && player.shield > 0) {
+                player.shield -= projectile.damage;
+                if (player.shield < 0) player.shield = 0;
+                createParticles(projectile.x, projectile.y, 6, '#4fc3f7');
+            } else {
+                player.health -= projectile.damage;
+                createParticles(projectile.x, projectile.y, 8, projectile.color);
+                
+                if (player.health <= 0) {
+                    player.health = 0;
+                    lives--;
+                    updateLives();
+                    
+                    if (lives <= 0) {
+                        gameOver();
+                    }
+                }
+            }
+            
+            bossProjectiles.splice(i, 1);
+            continue;
+        }
+        
+        if (projectile.life <= 0 ||
+            projectile.x < -100 || projectile.x > canvas.width + 100 ||
+            projectile.y < -100 || projectile.y > canvas.height + 100) {
+            bossProjectiles.splice(i, 1);
+        }
+    }
+}
+
+// Победа над боссом
+function defeatBoss() {
+    const bossReward = 1000 + (wave * 200);
+    score += bossReward;
+    updateScore();
+    
+    for (let i = 0; i < 50; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * boss.radius;
+        const px = boss.x + Math.cos(angle) * distance;
+        const py = boss.y + Math.sin(angle) * distance;
+        
+        particles.push({
+            x: px,
+            y: py,
+            radius: Math.random() * 6 + 3,
+            color: boss.color,
+            speedX: Math.cos(angle) * (Math.random() * 8 + 4),
+            speedY: Math.sin(angle) * (Math.random() * 8 + 4),
+            life: 90
+        });
+    }
+    
+    const healAmount = Math.min(50, player.maxHealth - player.health);
+    if (healAmount > 0) {
+        player.health += healAmount;
+        showNotification('health', `Босс повержен! +${healAmount} HP`);
+    }
+    
+    if (wave % 20 === 0) {
+        lives++;
+        updateLives();
+        showNotification('life', 'Бонусная жизнь!');
+    }
+    
+    showNotification('boss', `БОСС ПОВЕРЖЕН! +${bossReward} очков`);
+    
+    // Останавливаем спавн врагов во время босса
+    clearInterval(bossEnemySpawnInterval);
+    
+    bossActive = false;
+    boss = null;
+    bossProjectiles = [];
+    
+    // Восстанавливаем таймер волны
+    waveTimer = 12 + Math.floor(wave / 3);
+    document.getElementById('waveTimer').textContent = waveTimer;
+    document.getElementById('waveProgress').style.width = '0%';
+    
+    if (soundEnabled) playBossDefeatSound();
+}
+
+// Обработка нажатия клавиш
+function handleKeyDown(e) {
+    if (!gameActive) return;
+    
+    switch(e.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+            player.isMoving.up = true;
+            break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+            player.isMoving.down = true;
+            break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+            player.isMoving.left = true;
+            break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+            player.isMoving.right = true;
+            break;
+        case ' ':
+            if (gameActive) togglePause();
+            break;
+        case 'Shift':
+            activateShield();
+            break;
+        case 'Escape':
+            if (isFullscreen) toggleFullscreen();
+            break;
+    }
+}
+
+// Обработка отпускания клавиш
+function handleKeyUp(e) {
+    if (!gameActive) return;
+    
+    switch(e.key) {
+        case 'ArrowUp':
+        case 'w':
+        case 'W':
+            player.isMoving.up = false;
+            break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+            player.isMoving.down = false;
+            break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+            player.isMoving.left = false;
+            break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+            player.isMoving.right = false;
+            break;
+        case 'Shift':
+            deactivateShield();
+            break;
+    }
+}
+
+// Активация щита
+function activateShield() {
+    if (!gameActive || gamePaused || shieldCooldown || player.shield <= 0) return;
+    
+    shieldActive = true;
+    player.shieldActiveTime = Date.now();
+    
+    createParticles(player.x, player.y, 15, '#4fc3f7');
+    
+    if (soundEnabled) playShieldSound();
+}
+
+// Деактивация щита
+function deactivateShield() {
+    shieldActive = false;
+}
+
+// Обработка движения мыши
+function handleMouseMove(e) {
+    if (!gameActive || gamePaused) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    player.mouseX = mouseX;
+    player.mouseY = mouseY;
+}
+
+// Ручной выстрел
+function handleManualShoot(e) {
+    if (!gameActive || gamePaused) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    const angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+    shoot(angle);
+}
+
+// Автоматическая стрельба
+function autoShoot() {
+    if (!gameActive || gamePaused || enemies.length === 0) return;
+    
+    let closestEnemy = null;
+    let closestDistance = Infinity;
+    
+    for (const enemy of enemies) {
+        const distance = Math.sqrt(
+            Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
+        );
+        
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closestEnemy = enemy;
+        }
+    }
+    
+    if (closestEnemy) {
+        const angle = Math.atan2(closestEnemy.y - player.y, closestEnemy.x - player.x);
+        shoot(angle);
+    }
+}
+
+// Функция стрельбы
+function shoot(angle) {
+    const now = Date.now();
+    if (now - player.lastShot > player.fireRate) {
+        // Проверка на критический удар
+        let isCritical = Math.random() * 100 < player.criticalChance;
+        let bulletDamage = player.damage;
+        let bulletColor = '#ffcc00';
+        
+        if (isCritical) {
+            bulletDamage = roundNumber(player.damage * player.criticalMultiplier);
+            bulletColor = '#ff0000';
+        }
+        
+        bullets.push({
+            x: player.x,
+            y: player.y,
+            radius: 4,
+            speed: player.bulletSpeed,
+            damage: bulletDamage,
+            angle: angle,
+            color: bulletColor,
+            splitLevel: player.splitLevel,
+            ricochetCount: player.ricochetLevel,
+            piercingCount: player.piercingLevel,
+            enemiesHit: [],
+            isCritical: isCritical
+        });
+        
+        if (player.splitLevel > 0) {
+            const numExtraBullets = Math.min(2, player.splitLevel);
+            
+            for (let i = 1; i <= numExtraBullets; i++) {
+                const splitAngle1 = angle + (i * 0.15);
+                const splitAngle2 = angle - (i * 0.15);
+                
+                bullets.push({
+                    x: player.x,
+                    y: player.y,
+                    radius: 3,
+                    speed: player.bulletSpeed * 0.9,
+                    damage: roundNumber(player.damage * 0.5),
+                    angle: splitAngle1,
+                    color: '#ff9900',
+                    splitLevel: 0,
+                    ricochetCount: Math.max(0, player.ricochetLevel - 1),
+                    piercingCount: Math.max(0, player.piercingLevel - 1),
+                    enemiesHit: []
+                });
+                
+                bullets.push({
+                    x: player.x,
+                    y: player.y,
+                    radius: 3,
+                    speed: player.bulletSpeed * 0.9,
+                    damage: roundNumber(player.damage * 0.5),
+                    angle: splitAngle2,
+                    color: '#ff9900',
+                    splitLevel: 0,
+                    ricochetCount: Math.max(0, player.ricochetLevel - 1),
+                    piercingCount: Math.max(0, player.piercingLevel - 1),
+                    enemiesHit: []
+                });
+            }
+        }
+        
+        player.lastShot = now;
+        createParticles(player.x, player.y, 2, '#ffcc00');
+        
+        if (soundEnabled) playShootSound();
+    }
+}
+
+// Создание врага-стрелка
+function createShooterEnemy(x, y) {
+    return {
+        x: x,
+        y: y,
+        radius: 12,
+        speed: 0.5,
+        health: 30 + (wave * 5),
+        maxHealth: 30 + (wave * 5),
+        color: '#ff00ff',
+        damage: 5,
+        type: 'shooter',
+        lastShot: 0,
+        fireRate: 2000,
+        bulletSpeed: 4,
+        bulletDamage: 8 + (wave * 1)
+    };
+}
+
+// Стрельба врагов
+function enemyShoot(enemy) {
+    const now = Date.now();
+    if (now - enemy.lastShot > enemy.fireRate) {
+        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        
+        enemyBullets.push({
+            x: enemy.x,
+            y: enemy.y,
+            radius: 5,
+            speed: enemy.bulletSpeed,
+            damage: enemy.bulletDamage,
+            angle: angle,
+            color: '#ff00ff'
+        });
+        
+        enemy.lastShot = now;
+        createParticles(enemy.x, enemy.y, 3, '#ff00ff');
+        
+        if (soundEnabled) playEnemyShootSound();
+    }
+}
+
+// Создание ядра здоровья
+function createHealthCore(x, y) {
+    healthCores.push({
+        x: x,
+        y: y,
+        radius: 8,
+        life: 300, // Время жизни ядра (5 секунд при 60 FPS)
+        pulse: 0
+    });
+}
+
+// Создание частиц для эффектов (с лимитом для оптимизации памяти)
+function createParticles(x, y, count, color) {
+    // Удаляем старые частицы, если их слишком много
+    if (particles.length > MAX_PARTICLES * 0.8) {
+        particles = particles.filter(p => p.life > 10);
+    }
+    
+    const particlesToCreate = Math.min(count, MAX_PARTICLES - particles.length);
+    for (let i = 0; i < particlesToCreate; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            radius: Math.random() * 2 + 1,
+            color: color,
+            speedX: Math.random() * 4 - 2,
+            speedY: Math.random() * 4 - 2,
+            life: 20
+        });
+    }
+}
+
+// Создание врагов
+function createEnemies(count) {
+    for (let i = 0; i < count; i++) {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        
+        switch(side) {
+            case 0:
+                x = Math.random() * canvas.width;
+                y = -20;
+                break;
+            case 1:
+                x = canvas.width + 20;
+                y = Math.random() * canvas.height;
+                break;
+            case 2:
+                x = Math.random() * canvas.width;
+                y = canvas.height + 20;
+                break;
+            case 3:
+                x = -20;
+                y = Math.random() * canvas.height;
+                break;
+        }
+        
+        const enemyHealth = roundNumber(20 + (wave * 3) + (level * 2));
+        const enemyType = Math.random();
+        
+        if (enemyType < 0.6) {
+            // Обычный враг (60%)
+            const speed = 0.8 + wave * 0.08 + level * 0.03;
+            const radius = 10 + wave * 0.4;
+            const damage = 4 + wave * 0.4;
+            
+            enemies.push({
+                x: x,
+                y: y,
+                radius: roundNumber(radius),
+                speed: speed,
+                health: enemyHealth,
+                maxHealth: enemyHealth,
+                color: `hsl(${Math.random() * 60 + 300}, 70%, 50%)`,
+                damage: roundNumber(damage),
+                type: 'normal'
+            });
+        } else if (enemyType < 0.85) {
+            // Быстрый враг (25%)
+            const speed = 1.5 + wave * 0.12 + level * 0.06;
+            const radius = 7 + wave * 0.25;
+            const damage = 2 + wave * 0.25;
+            
+            enemies.push({
+                x: x,
+                y: y,
+                radius: roundNumber(radius),
+                speed: speed,
+                health: enemyHealth,
+                maxHealth: enemyHealth,
+                color: `hsl(${Math.random() * 60 + 180}, 70%, 50%)`,
+                damage: roundNumber(damage),
+                type: 'fast'
+            });
+        } else if (enemyType < 0.95) {
+            // Танк (10%)
+            const speed = 0.4 + wave * 0.04 + level * 0.015;
+            const radius = 18 + wave * 0.6;
+            const damage = 8 + wave * 0.6;
+            
+            enemies.push({
+                x: x,
+                y: y,
+                radius: roundNumber(radius),
+                speed: speed,
+                health: enemyHealth,
+                maxHealth: enemyHealth,
+                color: `hsl(${Math.random() * 60 + 0}, 70%, 50%)`,
+                damage: roundNumber(damage),
+                type: 'tank'
+            });
+        } else {
+            // Стрелок (5%)
+            enemies.push(createShooterEnemy(x, y));
+        }
+    }
+}
+
+// Обновление состояния игры
+function updateGame(deltaTime) {
+    if (!gameActive || gamePaused) return;
+    
+    gameTime++;
+    
+    // Движение игрока
+    const moveSpeed = player.speed * (deltaTime / 16.67);
+    if (player.isMoving.up && player.y > player.radius) player.y -= moveSpeed;
+    if (player.isMoving.down && player.y < canvas.height - player.radius) player.y += moveSpeed;
+    if (player.isMoving.left && player.x > player.radius) player.x -= moveSpeed;
+    if (player.isMoving.right && player.x < canvas.width - player.radius) player.x += moveSpeed;
+    
+    // Автоматическая стрельба
+    autoShoot();
+    
+    // Обновление щита
+    updateShield(deltaTime);
+    
+    // Обновление босса
+    if (bossActive) {
+        updateBoss(deltaTime);
+    }
+    
+    // Очистка старых пуль, если их слишком много (оптимизация памяти)
+    if (bullets.length > MAX_BULLETS) {
+        bullets = bullets.slice(-MAX_BULLETS);
+    }
+    
+    // Обновление пуль игрока
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        const bulletSpeed = bullet.speed * (deltaTime / 16.67);
+        bullet.x += Math.cos(bullet.angle) * bulletSpeed;
+        bullet.y += Math.sin(bullet.angle) * bulletSpeed;
+        
+        if (bullet.x < -bullet.radius || bullet.x > canvas.width + bullet.radius ||
+            bullet.y < -bullet.radius || bullet.y > canvas.height + bullet.radius) {
+            bullets.splice(i, 1);
+            continue;
+        }
+        
+        if (!bossActive) {
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                const enemy = enemies[j];
+                
+                if (bullet.enemiesHit.includes(j)) continue;
+                
+                const distance = Math.sqrt(
+                    Math.pow(bullet.x - enemy.x, 2) + Math.pow(bullet.y - enemy.y, 2)
+                );
+                
+                if (distance < bullet.radius + enemy.radius) {
+                    enemy.health -= bullet.damage;
+                    bullet.enemiesHit.push(j);
+                    
+                    createParticles(bullet.x, bullet.y, 3, '#ff3300');
+                    
+                    // Кража жизни
+                    if (player.lifeSteal > 0 && enemy.health <= 0) {
+                        const healAmount = roundNumber(bullet.damage * (player.lifeSteal / 100));
+                        player.health = Math.min(player.maxHealth, player.health + healAmount);
+                    }
+                    
+                    if (enemy.health <= 0) {
+                        let points = 10 + wave * 1.5;
+                        if (enemy.type === 'fast') points *= 1.3;
+                        if (enemy.type === 'tank') points *= 1.8;
+                        if (enemy.type === 'shooter') points *= 2;
+                        
+                        score += roundNumber(points);
+                        updateScore();
+                        
+                        // Получение опыта
+                        const expGain = 10 * (1 + upgradeSystem.experienceGain.level * 0.2);
+                        player.experience += expGain;
+                        checkLevelUp();
+                        
+                        createParticles(enemy.x, enemy.y, 10, '#ff9900');
+                        
+                        // Шанс выпадения ядра здоровья (30%)
+                        if (Math.random() < 0.3) {
+                            createHealthCore(enemy.x, enemy.y);
+                        }
+                        
+                        enemies.splice(j, 1);
+                        
+                        if (soundEnabled) playEnemyDestroySound();
+                    } else {
+                        if (soundEnabled) playHitSound();
+                        
+                        if (bullet.ricochetCount > 0) {
+                            bullet.ricochetCount--;
+                            
+                            const normalAngle = Math.atan2(bullet.y - enemy.y, bullet.x - enemy.x);
+                            const incidenceAngle = bullet.angle;
+                            bullet.angle = 2 * normalAngle - incidenceAngle + Math.PI;
+                            
+                            bullet.x += Math.cos(bullet.angle) * 4;
+                            bullet.y += Math.sin(bullet.angle) * 4;
+                            
+                            continue;
+                        }
+                    }
+                    
+                    if (bullet.piercingCount <= 0 || bullet.enemiesHit.length >= bullet.piercingCount + 1) {
+                        bullets.splice(i, 1);
+                    }
+                    
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Обновление врагов
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        
+        // Движение врага
+        const enemySpeed = enemy.speed * (deltaTime / 16.67);
+        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        enemy.x += Math.cos(angle) * enemySpeed;
+        enemy.y += Math.sin(angle) * enemySpeed;
+        
+        // Стрельба врага-стрелка
+        if (enemy.type === 'shooter') {
+            enemyShoot(enemy);
+        }
+        
+        // Проверка столкновения
+        const distanceToPlayer = Math.sqrt(
+            Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
+        );
+        
+        if (distanceToPlayer < player.radius + enemy.radius) {
+            if (shieldActive && player.shield > 0) {
+                player.shield -= enemy.damage * 2;
+                if (player.shield < 0) player.shield = 0;
+                
+                const pushAngle = Math.atan2(enemy.y - player.y, enemy.x - player.x);
+                enemy.x += Math.cos(pushAngle) * 20;
+                enemy.y += Math.sin(pushAngle) * 20;
+                
+                createParticles(player.x, player.y, 7, '#4fc3f7');
+                
+                if (soundEnabled) playShieldBlockSound();
+            } else {
+                player.health -= enemy.damage;
+                
+                const pushAngle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                player.x += Math.cos(pushAngle) * 15;
+                player.y += Math.sin(pushAngle) * 15;
+                
+                createParticles(player.x, player.y, 7, '#ff0000');
+                
+                if (player.health <= 0) {
+                    player.health = 0;
+                    lives--;
+                    updateLives();
+                    
+                    if (lives <= 0) {
+                        gameOver();
+                    } else {
+                        player.health = player.maxHealth;
+                        player.x = canvas.width / 2;
+                        player.y = canvas.height / 2;
+                    }
+                }
+                
+                if (soundEnabled) playCollisionSound();
+            }
+        }
+    }
+    
+    // Очистка старых пуль врагов, если их слишком много (оптимизация памяти)
+    if (enemyBullets.length > MAX_ENEMY_BULLETS) {
+        enemyBullets = enemyBullets.slice(-MAX_ENEMY_BULLETS);
+    }
+    
+    // Обновление пуль врагов
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+        const bulletSpeed = bullet.speed * (deltaTime / 16.67);
+        bullet.x += Math.cos(bullet.angle) * bulletSpeed;
+        bullet.y += Math.sin(bullet.angle) * bulletSpeed;
+        
+        if (bullet.x < -bullet.radius || bullet.x > canvas.width + bullet.radius ||
+            bullet.y < -bullet.radius || bullet.y > canvas.height + bullet.radius) {
+            enemyBullets.splice(i, 1);
+            continue;
+        }
+        
+        const distanceToPlayer = Math.sqrt(
+            Math.pow(player.x - bullet.x, 2) + Math.pow(player.y - bullet.y, 2)
+        );
+        
+        if (distanceToPlayer < player.radius + bullet.radius) {
+            if (shieldActive && player.shield > 0) {
+                player.shield -= bullet.damage;
+                if (player.shield < 0) player.shield = 0;
+                
+                createParticles(bullet.x, bullet.y, 5, '#4fc3f7');
+            } else {
+                player.health -= bullet.damage;
+                createParticles(bullet.x, bullet.y, 8, bullet.color);
+                
+                if (player.health <= 0) {
+                    player.health = 0;
+                    lives--;
+                    updateLives();
+                    
+                    if (lives <= 0) {
+                        gameOver();
+                    }
+                }
+            }
+            
+            enemyBullets.splice(i, 1);
+        }
+    }
+    
+    // Обновление частиц (с оптимизацией)
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const particle = particles[i];
+        const particleSpeedX = particle.speedX * (deltaTime / 16.67);
+        const particleSpeedY = particle.speedY * (deltaTime / 16.67);
+        particle.x += particleSpeedX;
+        particle.y += particleSpeedY;
+        particle.life--;
+        
+        // Удаляем мертвые частицы или частицы за пределами экрана
+        if (particle.life <= 0 || 
+            particle.x < -50 || particle.x > canvas.width + 50 ||
+            particle.y < -50 || particle.y > canvas.height + 50) {
+            particles.splice(i, 1);
+        }
+    }
+    
+    // Дополнительная очистка, если частиц слишком много
+    if (particles.length > MAX_PARTICLES) {
+        particles = particles.slice(-MAX_PARTICLES);
+    }
+    
+    // Обновление уведомлений
+    for (let i = notifications.length - 1; i >= 0; i--) {
+        const notification = notifications[i];
+        notification.life--;
+        
+        if (notification.life <= 0) {
+            notifications.splice(i, 1);
+            updateNotificationsDisplay();
+        }
+    }
+    
+    // Обновление ядер здоровья
+    for (let i = healthCores.length - 1; i >= 0; i--) {
+        const core = healthCores[i];
+        core.life--;
+        core.pulse += 0.1;
+        
+        // Проверка столкновения с игроком
+        const distanceToPlayer = Math.sqrt(
+            Math.pow(player.x - core.x, 2) + Math.pow(player.y - core.y, 2)
+        );
+        
+        if (distanceToPlayer < player.radius + core.radius) {
+            if (player.health < player.maxHealth) {
+                const healAmount = Math.min(10 + wave * 2, player.maxHealth - player.health);
+                player.health += roundNumber(healAmount);
+                
+                showNotification('health', `+${roundNumber(healAmount)} HP`);
+                createParticles(core.x, core.y, 10, '#00ff00');
+                
+                if (soundEnabled) playUpgradeSound();
+            }
+            
+            healthCores.splice(i, 1);
+            continue;
+        }
+        
+        // Удаление ядра, если истекло время жизни
+        if (core.life <= 0) {
+            healthCores.splice(i, 1);
+        }
+    }
+    
+    // Обновление звезд
+    if (gameTime % 3 === 0) {
+        for (let i = 0; i < stars.length; i++) {
+            const star = stars[i];
+            const starSpeed = star.speed * (deltaTime / 16.67);
+            star.y += starSpeed;
+            
+            if (star.y > canvas.height) {
+                star.y = 0;
+                star.x = Math.random() * canvas.width;
+            }
+        }
+    }
+}
+
+// Проверка повышения уровня игрока
+function checkLevelUp() {
+    if (player.experience >= player.experienceToNextLevel) {
+        player.playerLevel++;
+        player.experience -= player.experienceToNextLevel;
+        player.experienceToNextLevel = roundNumber(player.experienceToNextLevel * 1.5);
+        
+        // Бонусы за уровень
+        player.maxHealth += 20;
+        player.health = player.maxHealth;
+        player.damage += 2;
+        
+        showNotification('level', `Уровень ${player.playerLevel}! +20 HP, +2 урона`);
+        
+        // Обновляем отображение уровня
+        updatePlayerLevelDisplay();
+    }
+}
+
+// Обновление отображения уровня игрока
+function updatePlayerLevelDisplay() {
+    const levelElement = document.getElementById('playerLevel');
+    if (levelElement) {
+        levelElement.textContent = `Ур. ${player.playerLevel}`;
+    }
+    
+    const expElement = document.getElementById('playerExp');
+    if (expElement) {
+        const expPercent = (player.experience / player.experienceToNextLevel) * 100;
+        expElement.textContent = `${roundNumber(player.experience)}/${player.experienceToNextLevel}`;
+        expElement.style.width = `${expPercent}%`;
+    }
+}
+
+// Обновление щита
+function updateShield(deltaTime) {
+    const now = Date.now();
+    
+    if (now - player.lastShieldRegen > 1000) {
+        if (!shieldActive && player.shield < player.maxShield) {
+            player.shield += player.maxShield * player.shieldRegen;
+            if (player.shield > player.maxShield) player.shield = player.maxShield;
+        }
+        player.lastShieldRegen = now;
+    }
+    
+    if (shieldActive) {
+        const shieldDuration = 3000 + upgradeSystem.shield.level * 1000;
+        if (now - player.shieldActiveTime > shieldDuration) {
+            deactivateShield();
+            shieldCooldown = true;
+            player.shieldCooldownTime = now;
+        }
+        
+        const shieldDrain = 0.3 * (deltaTime / 16.67);
+        player.shield -= shieldDrain;
+        if (player.shield < 0) {
+            player.shield = 0;
+            deactivateShield();
+            shieldCooldown = true;
+            player.shieldCooldownTime = now;
+        }
+    }
+    
+    if (shieldCooldown) {
+        const cooldownTime = 5000;
+        if (now - player.shieldCooldownTime > cooldownTime) {
+            shieldCooldown = false;
+        }
+    }
+    
+    const shieldPercent = player.maxShield > 0 ? roundNumber((player.shield / player.maxShield) * 100) : 0;
+    document.getElementById('shield').textContent = shieldPercent + '%';
+}
+
+// Показать уведомление (с лимитом для оптимизации памяти)
+function showNotification(type, message) {
+    // Удаляем старые уведомления, если их слишком много
+    if (notifications.length >= MAX_NOTIFICATIONS) {
+        notifications.shift();
+    }
+    
+    const notification = {
+        type: type,
+        message: message,
+        life: 180,
+        id: Date.now() + Math.random()
+    };
+    
+    notifications.push(notification);
+    updateNotificationsDisplay();
+}
+
+// Обновить отображение уведомлений
+function updateNotificationsDisplay() {
+    const container = document.getElementById('notificationsContainer');
+    container.innerHTML = '';
+    
+    const recentNotifications = notifications.slice(-5);
+    
+    for (const notification of recentNotifications) {
+        const notificationElement = document.createElement('div');
+        notificationElement.className = `notification ${notification.type}`;
+        
+        let icon = '';
+        switch(notification.type) {
+            case 'health': icon = '♥'; break;
+            case 'damage': icon = '⚔'; break;
+            case 'fireRate': icon = '⚡'; break;
+            case 'movement': icon = '↻'; break;
+            case 'shield': icon = '⛨'; break;
+            case 'split': icon = '⇉'; break;
+            case 'ricochet': icon = '↶'; break;
+            case 'piercing': icon = '➹'; break;
+            case 'lifeSteal': icon = '🩸'; break;
+            case 'criticalChance': icon = '🎯'; break;
+            case 'criticalMultiplier': icon = '💥'; break;
+            case 'bulletSpeed': icon = '🚀'; break;
+            case 'experienceGain': icon = '📈'; break;
+            case 'boss': icon = '👹'; break;
+            case 'wave': icon = '🌊'; break;
+            case 'level': icon = '⭐'; break;
+            case 'life': icon = '💖'; break;
+        }
+        
+        notificationElement.innerHTML = `${icon} ${notification.message}`;
+        container.appendChild(notificationElement);
+    }
+}
+
+// Покупка улучшения
+function buyUpgrade(type) {
+    const upgrade = upgradeSystem[type];
+    
+    if (upgrade.level >= upgrade.maxLevel) {
+        showNotification(type, "Максимальный уровень!");
+        return;
+    }
+    
+    if (score >= upgrade.cost) {
+        score -= upgrade.cost;
+        upgrade.level++;
+        
+        switch(type) {
+            case 'damage':
+                player.damage += 3;
+                upgrade.description = `Урон +3 (${player.damage})`;
+                break;
+            case 'fireRate':
+                player.fireRate = Math.max(150, player.fireRate * 0.92);
+                upgrade.description = `Скорострельность +8% (${roundNumber(player.fireRate)}мс)`;
+                break;
+            case 'health':
+                player.maxHealth += 20;
+                player.health = player.maxHealth;
+                upgrade.description = `Здоровье +20 (${player.maxHealth})`;
+                break;
+            case 'movement':
+                player.speed += 0.3;
+                upgrade.description = `Скорость +0.3 (${player.speed.toFixed(1)})`;
+                break;
+            case 'shield':
+                player.maxShield += 15;
+                player.shield = player.maxShield;
+                upgrade.description = `Щит +15% (${player.maxShield}%)`;
+                break;
+            case 'split':
+                player.splitLevel = Math.min(3, player.splitLevel + 1);
+                upgrade.description = `Разделение x${player.splitLevel}`;
+                break;
+            case 'ricochet':
+                player.ricochetLevel = Math.min(5, player.ricochetLevel + 1);
+                upgrade.description = `Рикошет ${player.ricochetLevel}`;
+                break;
+            case 'piercing':
+                player.piercingLevel = Math.min(5, player.piercingLevel + 1);
+                upgrade.description = `Пробивание ${player.piercingLevel}`;
+                break;
+            case 'lifeSteal':
+                player.lifeSteal += 1;
+                upgrade.description = `Кража жизни +1% (${player.lifeSteal}%)`;
+                break;
+            case 'criticalChance':
+                player.criticalChance += 5;
+                upgrade.description = `Шанс крита +5% (${player.criticalChance}%)`;
+                break;
+            case 'criticalMultiplier':
+                player.criticalMultiplier += 0.5;
+                upgrade.description = `Множитель крита +0.5 (${player.criticalMultiplier.toFixed(1)}x)`;
+                break;
+            case 'bulletSpeed':
+                player.bulletSpeed *= 1.05;
+                upgrade.description = `Скорость пуль +5% (${player.bulletSpeed.toFixed(1)})`;
+                break;
+            case 'experienceGain':
+                upgrade.description = `Опыт +20% (${upgrade.level * 20}%)`;
+                break;
+        }
+        
+        upgrade.cost = roundNumber(upgrade.cost * 1.4);
+        
+        updateScore();
+        updateUpgradeDisplay(type);
+        
+        showNotification(type, upgrade.description);
+        
+        if (soundEnabled) playUpgradeSound();
+    } else {
+        showNotification(type, "Недостаточно очков!");
+    }
+}
+
+// Обновление отображения улучшения
+function updateUpgradeDisplay(type) {
+    const upgrade = upgradeSystem[type];
+    const upgradeElement = document.getElementById(`upgrade${type.charAt(0).toUpperCase() + type.slice(1)}`);
+    
+    if (upgradeElement) {
+        const levelValue = upgradeElement.querySelector('.level-value');
+        const upgradeCost = upgradeElement.querySelector('.upgrade-cost');
+        const upgradeBtn = upgradeElement.querySelector('.upgrade-btn');
+        
+        levelValue.textContent = upgrade.level;
+        upgradeCost.textContent = `Стоимость: ${upgrade.cost}`;
+        
+        if (upgrade.level === 0) {
+            upgradeBtn.textContent = 'Купить';
+        } else if (upgrade.level >= upgrade.maxLevel) {
+            upgradeBtn.textContent = 'Макс. уровень';
+            upgradeBtn.disabled = true;
+        } else {
+            upgradeBtn.textContent = 'Улучшить';
+            upgradeBtn.disabled = false;
+        }
+    }
+}
+
+// Запуск таймера волн
+function startWaveTimer() {
+    clearInterval(waveInterval);
+    
+    waveInterval = setInterval(() => {
+        if (!gameActive || gamePaused) return;
+        
+        // Не запускаем новую волну, если босс активен
+        if (bossActive) return;
+        
+        waveTimer--;
+        document.getElementById('waveTimer').textContent = waveTimer;
+        
+        const progress = (10 - waveTimer) / 10 * 100;
+        document.getElementById('waveProgress').style.width = `${progress}%`;
+        
+        if (waveTimer <= 0) {
+            startWave();
+        }
+    }, 1000);
+}
+
+// Запуск спавна врагов во время босса
+function startBossEnemySpawn() {
+    clearInterval(bossEnemySpawnInterval);
+    
+    bossEnemySpawnInterval = setInterval(() => {
+        if (!gameActive || gamePaused || !bossActive) {
+            clearInterval(bossEnemySpawnInterval);
             return;
         }
         
-        // Событие нового дня
-        const event = DATABASE.dailyEvents[GameState.day];
-        if (event && !GameState.eventsTriggered.has(event.id)) {
-            setTimeout(() => triggerEvent(event.id), 1000);
+        // Спавним 1-2 врага каждые 3-5 секунд во время босса
+        const enemyCount = Math.floor(Math.random() * 2) + 1;
+        createEnemies(enemyCount);
+    }, 3000 + Math.random() * 2000);
+}
+
+// Начало волны врагов
+function startWave() {
+    wave++;
+    
+    // Проверяем, является ли эта волна боссом
+    if (wave % 10 === 0) {
+        // Волна босса
+        enemies = [];
+        createBoss();
+        waveTimer = 30;
+        document.getElementById('wave').textContent = `Босс ${wave/10}`;
+    } else {
+        // Обычная волна
+        document.getElementById('wave').textContent = wave;
+        
+        if (wave % 4 === 0) {
+            level++;
+            document.getElementById('level').textContent = level;
         }
+        
+        const enemyCount = 4 + Math.floor(wave * 1.5);
+        createEnemies(enemyCount);
+        waveTimer = 12 + Math.floor(wave / 3);
+    }
+    
+    document.getElementById('waveTimer').textContent = waveTimer;
+    document.getElementById('waveProgress').style.width = '0%';
+    
+    if (wave % 10 !== 0) {
+        showNotification('wave', `Волна ${wave}!`);
     }
 }
 
-function checkEvents() {
-    // Автоматические события по дням
-    if (GameState.day > 0) {
-        const event = DATABASE.dailyEvents[GameState.day];
-        if (event && !GameState.eventsTriggered.has(event.id)) {
-            triggerEvent(event.id);
+// Обновление счета
+function updateScore() {
+    document.getElementById('score').textContent = score;
+}
+
+// Обновление жизней
+function updateLives() {
+    document.getElementById('lives').textContent = lives;
+}
+
+// Игровой цикл
+function gameLoop(currentTime) {
+    const deltaTime = currentTime - lastTime;
+    lastTime = currentTime;
+    
+    accumulator += deltaTime;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    drawBackground();
+    
+    if (gameActive) {
+        while (accumulator >= FIXED_TIMESTEP) {
+            updateGame(FIXED_TIMESTEP);
+            accumulator -= FIXED_TIMESTEP;
         }
+        
+        drawPlayer();
+        drawBullets();
+        drawEnemyBullets();
+        drawEnemies();
+        drawBoss();
+        drawBossProjectiles();
+        drawHealthCores();
+        drawParticles();
+        drawUI();
+    } else {
+        drawStars();
     }
     
-    // События по прогрессу
-    if (GameState.discoveredFrequencies.size >= 6 && !GameState.eventsTriggered.has('all_frequencies')) {
-        GameState.eventsTriggered.add('all_frequencies');
-        showModal('ВСЕ ЧАСТОТЫ НАЙДЕНЫ', 
-            'Вы обнаружили все 6 аномальных частот!\n\nТеперь у вас есть полная картина происходящего. Приготовьтесь к финальному решению.'
-        );
+    requestAnimationFrame(gameLoop);
+}
+
+// Рисование фона
+function drawBackground() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    drawStars();
+}
+
+// Рисование звезд
+function drawStars() {
+    for (const star of stars) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
-function gameOver(reason) {
-    const reasons = {
-        power: {
-            title: 'ЭНЕРГИЯ ИСЧЕРПАНА',
-            text: 'Станция отключилась. В темноте вы слышите, как "Тихие" приближаются к двери...'
-        },
-        risk: {
-            title: 'ПРЕДЕЛЬНЫЙ РИСК',
-            text: 'Вы привлекли слишком много внимания. "Тихие" нашли вас. Последнее, что вы слышите — абсолютная тишина...'
-        },
-        time: {
-            title: 'ВРЕМЯ ВЫШЛО',
-            text: 'Семь дней прошло. Вы не успели принять решение. Мир остался в подвешенном состоянии...'
-        }
-    };
+// Рисование игрока
+function drawPlayer() {
+    if (shieldActive && player.shield > 0) {
+        ctx.strokeStyle = '#4fc3f7';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius + 6, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        const pulse = Math.sin(gameTime * 0.08) * 1.5;
+        ctx.strokeStyle = `rgba(79, 195, 247, ${0.3 + Math.abs(Math.sin(gameTime * 0.04)) * 0.3})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius + 8 + pulse, 0, Math.PI * 2);
+        ctx.stroke();
+    }
     
-    const gameOverData = reasons[reason] || {
-        title: 'КАТАСТРОФА',
-        text: 'Игра окончена.'
-    };
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+    ctx.fill();
     
-    showModal(gameOverData.title, gameOverData.text, [
-        {
-            text: 'НОВАЯ ИГРА',
-            action: resetGame
-        }
-    ]);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
     
-    GameState.gameActive = false;
-}
-
-function resetGame() {
-    if (confirm('Начать новую игру? Текущий прогресс будет потерян.')) {
-        // Сброс состояния
-        Object.keys(GameState).forEach(key => {
-            if (typeof GameState[key] === 'object' && GameState[key] !== null) {
-                if (GameState[key] instanceof Set) {
-                    GameState[key] = new Set(['88.8']);
-                } else if (GameState[key] instanceof Map) {
-                    GameState[key] = new Map();
-                } else if (Array.isArray(GameState[key])) {
-                    GameState[key] = [];
-                }
+    let targetX = player.mouseX;
+    let targetY = player.mouseY;
+    
+    if (enemies.length > 0) {
+        let closestEnemy = null;
+        let closestDistance = Infinity;
+        
+        for (const enemy of enemies) {
+            const distance = Math.sqrt(
+                Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
+            );
+            
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestEnemy = enemy;
             }
-        });
+        }
         
-        // Сброс базовых значений
-        GameState.day = 1;
-        GameState.gameTime = 0;
-        GameState.power = CONFIG.INITIAL_POWER;
-        GameState.risk = 0;
-        GameState.currentFrequency = 88.8;
-        GameState.gameActive = true;
-        GameState.discoveredFrequencies = new Set(['88.8']);
-        
-        // Сброс интерфейса
-        ELEMENTS.playerNotes.value = '';
-        ELEMENTS.volume.value = 50;
-        ELEMENTS.volumeValue.textContent = '50%';
-        ELEMENTS.filter.value = 0;
-        ELEMENTS.filterValue.textContent = '0%';
-        
-        // Обновление интерфейса
-        updateFrequencyDisplay();
-        updateGameInfo();
-        updateGoals();
-        updateProgress();
-        updateLog();
-        updateBookmarks();
-        
-        // Начальная запись
-        addLogEntry('Станция "Голос Надежды" активирована. Начинаю сканирование эфира.');
-        
-        // Начальное событие
-        setTimeout(() => triggerEvent('start'), 500);
-        
-        // Скрытие модальных окон
-        ELEMENTS.modal.style.display = 'none';
-        ELEMENTS.endingScreen.style.display = 'none';
-        
-        // Запуск игрового цикла
-        GameState.lastUpdate = Date.now();
-        requestAnimationFrame(gameLoop);
+        if (closestEnemy) {
+            targetX = closestEnemy.x;
+            targetY = closestEnemy.y;
+        }
     }
-}
-
-// ===== CANVAS И АУДИО =====
-function initCanvas() {
-    const ctx = ELEMENTS.spectrum.getContext('2d');
-    ELEMENTS.spectrum.width = ELEMENTS.spectrum.clientWidth;
-    ELEMENTS.spectrum.height = ELEMENTS.spectrum.clientHeight;
     
-    GameState.spectrumCtx = ctx;
-    GameState.spectrumData = new Array(100).fill(0);
-}
-
-function updateSpectrum() {
-    if (!GameState.spectrumCtx) return;
-    
-    const ctx = GameState.spectrumCtx;
-    const width = ELEMENTS.spectrum.width;
-    const height = ELEMENTS.spectrum.height;
-    
-    // Очистка
-    ctx.clearRect(0, 0, width, height);
-    
-    // Обновление данных
-    const freq = GameState.currentFrequency.toFixed(1);
-    const transmission = DATABASE.frequencies[freq];
-    const hasSignal = transmission ? 0.7 : 0.3;
-    
-    GameState.spectrumData.shift();
-    GameState.spectrumData.push(
-        (Math.random() * 0.4 + 0.3) * hasSignal
-    );
-    
-    // Рисование
-    const barWidth = width / GameState.spectrumData.length;
-    const color = transmission ? '#4aff9a' : '#4a9fff';
-    
-    ctx.fillStyle = color + '40';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    const angle = Math.atan2(targetY - player.y, targetX - player.x);
+    const pointerLength = player.radius + 6;
+    const pointerX = player.x + Math.cos(angle) * pointerLength;
+    const pointerY = player.y + Math.sin(angle) * pointerLength;
     
     ctx.beginPath();
-    
-    for (let i = 0; i < GameState.spectrumData.length; i++) {
-        const x = i * barWidth;
-        const value = GameState.spectrumData[i];
-        const barHeight = value * height * 0.8;
-        const y = height - barHeight;
-        
-        // Заполнение
-        ctx.fillRect(x, y, barWidth - 1, barHeight);
-        
-        // Линия
-        if (i === 0) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
-    
+    ctx.moveTo(player.x, player.y);
+    ctx.lineTo(pointerX, pointerY);
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
+    
+    const healthBarWidth = 40;
+    const healthBarHeight = 5;
+    const healthPercent = player.health / player.maxHealth;
+    
+    ctx.fillStyle = '#330000';
+    ctx.fillRect(player.x - healthBarWidth/2, player.y - player.radius - 15, healthBarWidth, healthBarHeight);
+    
+    ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+    ctx.fillRect(player.x - healthBarWidth/2, player.y - player.radius - 15, healthBarWidth * healthPercent, healthBarHeight);
+    
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(player.x - healthBarWidth/2, player.y - player.radius - 15, healthBarWidth, healthBarHeight);
+    
+    if (player.maxShield > 0) {
+        const shieldBarWidth = 40;
+        const shieldBarHeight = 4;
+        const shieldPercent = player.shield / player.maxShield;
+        
+        ctx.fillStyle = '#003333';
+        ctx.fillRect(player.x - shieldBarWidth/2, player.y - player.radius - 20, shieldBarWidth, shieldBarHeight);
+        
+        ctx.fillStyle = '#4fc3f7';
+        ctx.fillRect(player.x - shieldBarWidth/2, player.y - player.radius - 20, shieldBarWidth * shieldPercent, shieldBarHeight);
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(player.x - shieldBarWidth/2, player.y - player.radius - 20, shieldBarWidth, shieldBarHeight);
+    }
 }
 
-function playSound(type) {
-    // Простая имитация звуков
-    try {
-        if (window.AudioContext) {
-            const audioContext = new AudioContext();
-            
-            let frequency = 440;
-            let duration = 0.1;
-            
-            switch(type) {
-                case 'click':
-                    frequency = 800;
-                    duration = 0.05;
-                    break;
-                case 'beep':
-                    frequency = 1200;
-                    duration = 0.15;
-                    break;
-                case 'discovery':
-                    frequency = 1500;
-                    duration = 0.3;
-                    break;
-                case 'response':
-                    frequency = 1000;
-                    duration = 0.2;
-                    break;
-                case 'goal':
-                    frequency = 2000;
-                    duration = 0.25;
-                    break;
-            }
-            
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = frequency;
-            oscillator.type = 'sine';
-            
-            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-            
-            oscillator.start();
-            oscillator.stop(audioContext.currentTime + duration);
+// Рисование босса
+function drawBoss() {
+    if (!bossActive || !boss) return;
+    
+    if (boss.shieldActive && boss.shield > 0) {
+        const shieldPercent = boss.shield / boss.maxShield;
+        const shieldRadius = boss.radius + 15;
+        
+        ctx.strokeStyle = '#4fc3f7';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(boss.x, boss.y, shieldRadius, 0, Math.PI * 2 * shieldPercent);
+        ctx.stroke();
+        
+        ctx.strokeStyle = `rgba(79, 195, 247, 0.3)`;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.arc(boss.x, boss.y, shieldRadius - 2, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+    
+    ctx.fillStyle = boss.color;
+    ctx.beginPath();
+    ctx.arc(boss.x, boss.y, boss.radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    
+    const healthBarWidth = 80;
+    const healthBarHeight = 8;
+    const healthPercent = boss.health / boss.maxHealth;
+    
+    ctx.fillStyle = '#330000';
+    ctx.fillRect(boss.x - healthBarWidth/2, boss.y - boss.radius - 15, healthBarWidth, healthBarHeight);
+    
+    ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+    ctx.fillRect(boss.x - healthBarWidth/2, boss.y - boss.radius - 15, healthBarWidth * healthPercent, healthBarHeight);
+    
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(boss.x - healthBarWidth/2, boss.y - boss.radius - 15, healthBarWidth, healthBarHeight);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(boss.name, boss.x, boss.y - boss.radius - 25);
+}
+
+// Рисование снарядов босса
+function drawBossProjectiles() {
+    for (const projectile of bossProjectiles) {
+        ctx.fillStyle = projectile.color;
+        ctx.beginPath();
+        ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+}
+
+// Рисование пуль
+function drawBullets() {
+    for (const bullet of bullets) {
+        let glowColor = bullet.color;
+        let glowSize = 8;
+        
+        if (bullet.isCritical) {
+            glowColor = '#ff0000';
+            glowSize = 15;
+        } else if (bullet.splitLevel > 0) {
+            glowColor = '#ff9900';
+            glowSize = 6;
+        } else if (bullet.ricochetCount > 0) {
+            glowColor = '#ff00aa';
+            glowSize = 10;
+        } else if (bullet.piercingCount > 0) {
+            glowColor = '#00ffff';
+            glowSize = 10;
         }
-    } catch (error) {
-        // Игнорируем ошибки аудио
+        
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = glowSize;
+        ctx.fillStyle = bullet.color;
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
     }
 }
 
-// ===== СОХРАНЕНИЕ И ЗАГРУЗКА =====
-function saveGame() {
-    try {
-        const saveData = {
-            version: CONFIG.VERSION,
-            day: GameState.day,
-            gameTime: GameState.gameTime,
-            power: GameState.power,
-            risk: GameState.risk,
-            currentFrequency: GameState.currentFrequency,
-            discoveredFrequencies: Array.from(GameState.discoveredFrequencies),
-            goalsCompleted: Array.from(GameState.goalsCompleted),
-            dayPoints: GameState.dayPoints,
-            totalPoints: GameState.totalPoints,
-            responses: Array.from(GameState.responses.entries()),
-            logEntries: GameState.logEntries,
-            playerNotes: GameState.playerNotes,
-            bookmarks: GameState.bookmarks,
-            eventsTriggered: Array.from(GameState.eventsTriggered),
-            lastSave: Date.now()
-        };
+// Рисование пуль врагов
+function drawEnemyBullets() {
+    for (const bullet of enemyBullets) {
+        ctx.fillStyle = bullet.color;
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+        ctx.fill();
         
-        localStorage.setItem(GameState.saveSlot, JSON.stringify(saveData));
-        console.log('Game saved');
-        return true;
-    } catch (error) {
-        console.error('Save failed:', error);
-        return false;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
     }
 }
 
-function loadGame() {
-    try {
-        const saveData = JSON.parse(localStorage.getItem(GameState.saveSlot));
+// Рисование врагов
+function drawEnemies() {
+    for (const enemy of enemies) {
+        ctx.fillStyle = enemy.color;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+        ctx.fill();
         
-        if (!saveData || saveData.version !== CONFIG.VERSION) {
-            console.log('No save found, starting new game');
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        const healthBarWidth = 30;
+        const healthBarHeight = 4;
+        const healthPercent = enemy.health / enemy.maxHealth;
+        
+        ctx.fillStyle = '#330000';
+        ctx.fillRect(enemy.x - healthBarWidth/2, enemy.y - enemy.radius - 8, healthBarWidth, healthBarHeight);
+        
+        ctx.fillStyle = healthPercent > 0.5 ? '#00ff00' : healthPercent > 0.25 ? '#ffff00' : '#ff0000';
+        ctx.fillRect(enemy.x - healthBarWidth/2, enemy.y - enemy.radius - 8, healthBarWidth * healthPercent, healthBarHeight);
+        
+        const eyeRadius = enemy.radius * 0.3;
+        const eyeOffset = enemy.radius * 0.5;
+        const angleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        
+        const leftEyeX = enemy.x + Math.cos(angleToPlayer + Math.PI/6) * eyeOffset;
+        const leftEyeY = enemy.y + Math.sin(angleToPlayer + Math.PI/6) * eyeOffset;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(leftEyeX, leftEyeY, eyeRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        const rightEyeX = enemy.x + Math.cos(angleToPlayer - Math.PI/6) * eyeOffset;
+        const rightEyeY = enemy.y + Math.sin(angleToPlayer - Math.PI/6) * eyeOffset;
+        ctx.beginPath();
+        ctx.arc(rightEyeX, rightEyeY, eyeRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(leftEyeX, leftEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(rightEyeX, rightEyeY, eyeRadius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if (enemy.type === 'fast') {
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius + 3, 0, Math.PI * 0.7);
+            ctx.stroke();
+        } else if (enemy.type === 'tank') {
+            ctx.strokeStyle = '#ff9900';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius + 5, 0, Math.PI * 2);
+            ctx.stroke();
+        } else if (enemy.type === 'shooter') {
+            ctx.strokeStyle = '#ff00ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius + 3, 0, Math.PI * 2);
+            ctx.stroke();
             
-            // Начальная запись
-            addLogEntry('Станция "Голос Надежды" активирована. Начинаю сканирование эфира.');
-            
-            // Обнаружение начальной частоты
-            GameState.discoveredFrequencies = new Set(['88.8']);
-            
-            return false;
+            ctx.fillStyle = '#ff00ff';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚡', enemy.x, enemy.y + 4);
         }
-        
-        // Загрузка состояния
-        GameState.day = saveData.day || 1;
-        GameState.gameTime = saveData.gameTime || 0;
-        GameState.power = saveData.power || CONFIG.INITIAL_POWER;
-        GameState.risk = saveData.risk || 0;
-        GameState.currentFrequency = saveData.currentFrequency || 88.8;
-        GameState.discoveredFrequencies = new Set(saveData.discoveredFrequencies || ['88.8']);
-        GameState.goalsCompleted = new Set(saveData.goalsCompleted || []);
-        GameState.dayPoints = saveData.dayPoints || 0;
-        GameState.totalPoints = saveData.totalPoints || 0;
-        GameState.responses = new Map(saveData.responses || []);
-        GameState.logEntries = saveData.logEntries || [];
-        GameState.playerNotes = saveData.playerNotes || '';
-        GameState.bookmarks = saveData.bookmarks || [];
-        GameState.eventsTriggered = new Set(saveData.eventsTriggered || []);
-        GameState.gameActive = true;
-        
-        // Обновление интерфейса
-        ELEMENTS.playerNotes.value = GameState.playerNotes;
-        ELEMENTS.charCount.textContent = `${GameState.playerNotes.length}/500`;
-        
-        console.log('Game loaded');
-        return true;
-    } catch (error) {
-        console.error('Load failed:', error);
-        return false;
     }
 }
 
-// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
-function getRiskText(risk) {
-    if (risk <= 2) return 'БЕЗОП.';
-    if (risk <= 4) return 'НИЗКИЙ';
-    if (risk <= 6) return 'СРЕДНИЙ';
-    if (risk <= 8) return 'ВЫСОКИЙ';
-    return 'КРИТИЧ.';
+// Рисование ядер здоровья
+function drawHealthCores() {
+    for (const core of healthCores) {
+        const pulseSize = 1 + Math.sin(core.pulse) * 0.3;
+        const currentRadius = core.radius * pulseSize;
+        
+        // Внешнее свечение
+        ctx.shadowColor = '#00ff00';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#00ff00';
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath();
+        ctx.arc(core.x, core.y, currentRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Внутренний круг
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#00ff88';
+        ctx.beginPath();
+        ctx.arc(core.x, core.y, currentRadius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Центральная точка
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(core.x, core.y, currentRadius * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Символ сердца
+        ctx.fillStyle = '#ff0000';
+        ctx.font = `${currentRadius * 0.8}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('♥', core.x, core.y);
+    }
 }
 
-function getRiskColor(risk) {
-    if (risk <= 2) return '#4aff9a';
-    if (risk <= 4) return '#4a9fff';
-    if (risk <= 6) return '#ff9a4a';
-    if (risk <= 8) return '#ff4a6a';
-    return '#ff0000';
+// Рисование частиц
+function drawParticles() {
+    for (const particle of particles) {
+        ctx.fillStyle = particle.color;
+        ctx.globalAlpha = particle.life / 20;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
 }
 
-function getSignalText(strength) {
-    if (strength < 20) return 'НЕТ СИГНАЛА';
-    if (strength < 40) return 'СЛАБЫЙ';
-    if (strength < 60) return 'СРЕДНИЙ';
-    if (strength < 80) return 'ХОРОШИЙ';
-    return 'ОТЛИЧНЫЙ';
+// Рисование интерфейса
+function drawUI() {
+    if (gamePaused) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('ПАУЗА', canvas.width/2, canvas.height/2);
+        
+        ctx.font = '20px Arial';
+        ctx.fillText('Нажмите ПРОБЕЛ для продолжения', canvas.width/2, canvas.height/2 + 50);
+    }
+    
+    if (shieldActive) {
+        ctx.fillStyle = 'rgba(79, 195, 247, 0.2)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = '#4fc3f7';
+        ctx.font = 'bold 30px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('ЩИТ АКТИВЕН', canvas.width/2, 40);
+        
+        const shieldPercent = roundNumber((player.shield / player.maxShield) * 100);
+        ctx.font = '20px Arial';
+        ctx.fillText(`Щит: ${shieldPercent}%`, canvas.width/2, 70);
+    }
+    
+    if (shieldCooldown) {
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = '#ff3300';
+        ctx.font = 'bold 25px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('ЩИТ ПЕРЕЗАРЯЖАЕТСЯ', canvas.width/2, 40);
+    }
 }
 
-function getSignalColor(strength) {
-    if (strength < 20) return '#ff4a6a';
-    if (strength < 40) return '#ff9a4a';
-    if (strength < 60) return '#ffd700';
-    if (strength < 80) return '#4a9fff';
-    return '#4aff9a';
+// Получить или создать единый AudioContext (оптимизация памяти)
+function getAudioContext() {
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+            console.log("Аудио не поддерживается или отключено");
+            return null;
+        }
+    }
+    // Восстанавливаем контекст, если он был приостановлен
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    return audioContext;
 }
 
-function getNoiseText() {
-    const texts = [
-        '...статический шум... слабые помехи...',
-        '...фоновый гул низких частот... мерцающие импульсы...',
-        '...космический шум... атмосферные аномалии...',
-        '...белый шум... случайные всплески...'
-    ];
-    return texts[Math.floor(Math.random() * texts.length)];
+// Звуковые эффекты для босса
+function playBossAttackSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(150, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.4);
+        
+        gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.4);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
 }
 
-function getRecommendations(risk) {
-    if (risk <= 3) return 'Безопасно для прослушивания';
-    if (risk <= 6) return 'Рекомендуется снизить громкость';
-    if (risk <= 8) return 'Опасно. Возможна активность "Тихих"';
-    return 'Критически опасно. Немедленно прекратите прослушивание';
+function playBossDefeatSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(100, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.5);
+        
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.5);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
 }
 
-// ===== ЗАПУСК ИГРЫ =====
-// Запуск при полной загрузке страницы
-window.addEventListener('DOMContentLoaded', () => {
-    // Небольшая задержка для гарантии загрузки всех элементов
-    setTimeout(() => {
-        init();
-        console.log('Last Broadcast v2.2 запущена!');
-    }, 100);
-});
+function playEnemyShootSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(300, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.2);
+        
+        gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+// Существующие звуковые эффекты
+function playShootSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(800, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.1);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+function playHitSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(400, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.1);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+function playEnemyDestroySound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(200, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3);
+        
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.3);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+function playCollisionSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(150, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.2);
+        
+        gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+function playUpgradeSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(300, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.2);
+        
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+function playShieldSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(400, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.3);
+        
+        gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.3);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+function playShieldBlockSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    
+    try {
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        oscillator.frequency.setValueAtTime(600, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.2);
+        
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+        
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+        // Игнорируем ошибки звука
+    }
+}
+
+// Управление игрой
+function startGame() {
+    console.log("Запуск игры...");
+    
+    document.getElementById('gameOverlay').style.display = 'none';
+    
+    gameActive = true;
+    gamePaused = false;
+    score = 0;
+    lives = 5;
+    wave = 1;
+    level = 1;
+    waveTimer = 10;
+    shieldActive = false;
+    shieldCooldown = false;
+    bossActive = false;
+    boss = null;
+    
+    player.x = canvas.width / 2;
+    player.y = canvas.height / 2;
+    player.health = 100;
+    player.maxHealth = 100;
+    player.damage = 10;
+    player.fireRate = 400;
+    player.speed = 4;
+    player.shield = 0;
+    player.maxShield = 0;
+    player.splitLevel = 0;
+    player.ricochetLevel = 0;
+    player.piercingLevel = 0;
+    player.lifeSteal = 0;
+    player.criticalChance = 5;
+    player.criticalMultiplier = 2;
+    player.bulletSpeed = 7;
+    player.experience = 0;
+    player.experienceToNextLevel = 100;
+    player.playerLevel = 1;
+    
+    // Сброс улучшений
+    for (const key in upgradeSystem) {
+        if (key === 'damage') upgradeSystem[key].level = 1;
+        else if (key === 'fireRate') upgradeSystem[key].level = 1;
+        else if (key === 'health') upgradeSystem[key].level = 1;
+        else if (key === 'movement') upgradeSystem[key].level = 1;
+        else upgradeSystem[key].level = 0;
+        
+        switch(key) {
+            case 'damage': upgradeSystem[key].cost = 100; break;
+            case 'fireRate': upgradeSystem[key].cost = 150; break;
+            case 'health': upgradeSystem[key].cost = 200; break;
+            case 'movement': upgradeSystem[key].cost = 120; break;
+            case 'shield': upgradeSystem[key].cost = 250; break;
+            case 'split': upgradeSystem[key].cost = 400; break;
+            case 'ricochet': upgradeSystem[key].cost = 350; break;
+            case 'piercing': upgradeSystem[key].cost = 400; break;
+            case 'lifeSteal': upgradeSystem[key].cost = 300; break;
+            case 'criticalChance': upgradeSystem[key].cost = 400; break;
+            case 'criticalMultiplier': upgradeSystem[key].cost = 500; break;
+            case 'bulletSpeed': upgradeSystem[key].cost = 200; break;
+            case 'experienceGain': upgradeSystem[key].cost = 600; break;
+        }
+    }
+    
+    document.getElementById('score').textContent = score;
+    document.getElementById('lives').textContent = lives;
+    document.getElementById('wave').textContent = wave;
+    document.getElementById('level').textContent = level;
+    document.getElementById('waveTimer').textContent = waveTimer;
+    document.getElementById('shield').textContent = '0%';
+    document.getElementById('pauseBtn').innerHTML = '<i class="fas fa-pause"></i> Пауза';
+    
+    for (const key in upgradeSystem) {
+        updateUpgradeDisplay(key);
+    }
+    
+    updatePlayerLevelDisplay();
+    
+    bullets = [];
+    enemies = [];
+    enemyBullets = [];
+    particles = [];
+    upgrades = [];
+    notifications = [];
+    bossProjectiles = [];
+    healthCores = [];
+    document.getElementById('notificationsContainer').innerHTML = '';
+    
+    // Очистка интервалов
+    clearInterval(waveInterval);
+    clearInterval(bossEnemySpawnInterval);
+    
+    createStars();
+    
+    startWaveTimer();
+    
+    console.log("Игра запущена успешно");
+}
+
+function togglePause() {
+    if (!gameActive) return;
+    
+    gamePaused = !gamePaused;
+    document.getElementById('pauseBtn').innerHTML = gamePaused ? 
+        '<i class="fas fa-play"></i> Продолжить' : 
+        '<i class="fas fa-pause"></i> Пауза';
+}
+
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    document.getElementById('soundBtn').innerHTML = soundEnabled ? 
+        '<i class="fas fa-volume-up"></i> Звук' : 
+        '<i class="fas fa-volume-mute"></i> Звук';
+}
+
+function toggleFullscreen() {
+    const gameContainer = document.querySelector('.game-container');
+    
+    if (!isFullscreen) {
+        if (gameContainer.requestFullscreen) {
+            gameContainer.requestFullscreen();
+        } else if (gameContainer.webkitRequestFullscreen) {
+            gameContainer.webkitRequestFullscreen();
+        } else if (gameContainer.msRequestFullscreen) {
+            gameContainer.msRequestFullscreen();
+        }
+        gameContainer.classList.add('fullscreen');
+        isFullscreen = true;
+        document.getElementById('fullscreenBtn').innerHTML = '<i class="fas fa-compress"></i> Обычный экран';
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        }
+        gameContainer.classList.remove('fullscreen');
+        isFullscreen = false;
+        document.getElementById('fullscreenBtn').innerHTML = '<i class="fas fa-expand"></i> На весь экран';
+    }
+    
+    setTimeout(resizeCanvas, 100);
+}
+
+// Обработчик изменения полноэкранного режима
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+function handleFullscreenChange() {
+    const gameContainer = document.querySelector('.game-container');
+    isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+    
+    if (isFullscreen) {
+        gameContainer.classList.add('fullscreen');
+        document.getElementById('fullscreenBtn').innerHTML = '<i class="fas fa-compress"></i> Обычный экран';
+    } else {
+        gameContainer.classList.remove('fullscreen');
+        document.getElementById('fullscreenBtn').innerHTML = '<i class="fas fa-expand"></i> На весь экран';
+    }
+    
+    resizeCanvas();
+}
+
+function restartGame() {
+    gameOver();
+    setTimeout(startGame, 500);
+}
+
+function gameOver() {
+    gameActive = false;
+    clearInterval(waveInterval);
+    clearInterval(bossEnemySpawnInterval);
+    
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('spaceSurvivorHighScore', highScore);
+        document.getElementById('highScoreValue').textContent = highScore;
+    }
+    
+    document.getElementById('overlayTitle').textContent = 'Игра окончена!';
+    document.getElementById('overlayText').textContent = `Вы набрали ${score} очков и дошли до ${wave} волны.`;
+    document.getElementById('startBtn').innerHTML = '<i class="fas fa-redo"></i> Играть снова';
+    document.getElementById('gameOverlay').style.display = 'flex';
+}
+
+// Инициализация игры при загрузке страницы
+window.onload = function() {
+    console.log("Загрузка страницы завершена");
+    initGame();
+    
+    for (const key in upgradeSystem) {
+        updateUpgradeDisplay(key);
+    }
+    
+    updatePlayerLevelDisplay();
+};
