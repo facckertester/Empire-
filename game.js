@@ -2394,7 +2394,7 @@ function updateBulletRing(weapon, deltaTime) {
                 speed: player.bulletSpeed * 0.9,
                 damage: roundNumber(player.damage * 0.7 * weapon.level),
                 angle: angle,
-                color: '#ff00ff',
+                color: '#42AAFF',
                 splitLevel: 0,
                 ricochetCount: 0,
                 piercingCount: 0,
@@ -2404,7 +2404,7 @@ function updateBulletRing(weapon, deltaTime) {
         }
         
         bulletRings.lastCast = now;
-        createParticles(player.x, player.y, 15, '#ff00ff');
+        createParticles(player.x, player.y, 15, '#42AAFF');
     }
 }
 
