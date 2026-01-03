@@ -1,3 +1,78 @@
+// Расчёт поглощения урона Вуалью звёзд
+function calculateVeilDamageReduction() {
+    const veilWeapon = activeWeapons.find(w => w.type === 'veilOfStars');
+    if (!veilWeapon) return 0;
+    
+    // Начальный процент 8% на 1 уровне, до 99% на 40 уровне
+    const reductionPercent = Math.min(8 + (veilWeapon.level - 1) * 2.3, 99);
+    return reductionPercent / 100;
+}
+
+// Применение поглощения урона
+function applyVeilDamageReduction(damage) {
+    const reduction = calculateVeilDamageReduction();
+    return damage * (1 - reduction);
+}
+
+// Функция активации красного эффекта при уроне
+function activateDamageEffect() {
+    startDamageBorderEffect();
+}
+
+// Функция для звука стратегического удара
+function playStrategicStrikeSound() {
+    if (soundEnabled) {
+        // Используем существующий звук попадания как временный
+        playHitSound();
+    }
+}
+
+// Система красной рамки при уроне
+let damageBorderEffect = {
+    active: false,
+    duration: 0,
+    maxDuration: 500 // 0.5 секунды эффекта
+};
+
+// Запуск красной рамки при уроне
+function startDamageBorderEffect() {
+    damageBorderEffect.active = true;
+    damageBorderEffect.duration = damageBorderEffect.maxDuration;
+    
+    // Применяем эффект к canvas
+    const canvas = document.getElementById('gameCanvas');
+    if (canvas) {
+        canvas.style.borderColor = '#ff0000';
+        canvas.style.boxShadow = '0 0 30px rgba(255, 0, 0, 0.8)';
+    }
+}
+
+// Обновление эффекта красной рамки
+function updateDamageBorderEffect(deltaTime) {
+    if (!damageBorderEffect.active) return;
+    
+    damageBorderEffect.duration -= deltaTime;
+    
+    if (damageBorderEffect.duration <= 0) {
+        damageBorderEffect.active = false;
+        
+        // Возвращаем обычные стили
+        const canvas = document.getElementById('gameCanvas');
+        if (canvas) {
+            canvas.style.borderColor = '#1a237e';
+            canvas.style.boxShadow = '0 0 20px rgba(0, 50, 255, 0.3)';
+        }
+    } else {
+        // Пульсирующий эффект
+        const intensity = damageBorderEffect.duration / damageBorderEffect.maxDuration;
+        const canvas = document.getElementById('gameCanvas');
+        if (canvas) {
+            const glowSize = 20 + (intensity * 20);
+            canvas.style.boxShadow = `0 0 ${glowSize}px rgba(255, 0, 0, ${intensity * 0.8})`;
+        }
+    }
+}
+
 // Система тряски экрана
 let screenShake = {
     active: false,
@@ -56,6 +131,7 @@ let lives = 5;
 let wave = 1;
 let level = 1;
 let waveTimer = 10;
+let waveMaxTimer = 10; // Добавлено объявление
 let waveInterval;
 let bossEnemySpawnInterval;
 let gameTime = 0;
@@ -67,6 +143,23 @@ let shieldCooldown = false;
 let bossActive = false;
 let boss = null;
 let manualShootMode = false; // Режим стрельбы: false = автоматический, true = ручной
+
+// Система неуязвимости после потери жизни
+let invulnerable = false;
+let invulnerableEndTime = 0;
+let invulnerableDuration = 2000; // 2 секунды неуязвимости
+
+// Активация неуязвимости после потери жизни
+function activateInvulnerability() {
+    invulnerable = true;
+    invulnerableEndTime = Date.now() + invulnerableDuration;
+    
+    // Показываем уведомление
+    showNotification('shield', '🛡️ Неуязвимость на 2 секунды!');
+    
+    // Визуальный эффект неуязвимости
+    createParticles(player.x, player.y, 20, '#ffff00', 'shield');
+}
 
 // Единый AudioContext для всех звуков (оптимизация памяти)
 let audioContext = null;
@@ -137,6 +230,7 @@ let healthCores = [];
 // Система дополнительного оружия
 let activeWeapons = []; // Массив активных оружий {type, level}
 let weaponSelectionPaused = false; // Флаг паузы для выбора оружия
+let refreshCost = 5; // Начальная цена обновления выбора оружия
 
 // Данные для дополнительного оружия
 let orbitalShields = []; // Орбитальные щиты
@@ -146,11 +240,28 @@ let chainLightning = { lastCast: 0, cooldown: 2000 }; // Молнии
 let damageWaves = []; // Волны урона
 let meteors = []; // Метеориты
 let fireBalls = []; // Огненные шары
-let iceSpikes = { lastSpike: 0, activeSpikes: [] }; // Ледяные шипы (состояние и активные шипы)
+let iceSpikes = { lastSpike: 0, activeSpikes: [], secondarySpikes: [] }; // Ледяные шипы (основные и дополнительные)
 let homingMissiles = []; // Снаряды с наведением
 let bulletRings = { lastCast: 0, cooldown: 3000 }; // Кольцо из пуль
 let activeLasers = []; // Активные лазерные лучи
 let activeLightning = []; // Активные молнии
+
+// НОВЫЕ ОРУЖИЯ
+let magneticMines = [];          // Магнитные мины 🧲
+let lightSabers = [];            // Световые клинки ⚔️
+let toxicClouds = [];            // Токсичные облака ☁️
+let sniperLasers = { lastShot: 0, cooldown: 3000, activeTarget: null }; // Снайперские лазеры 🎯
+let veilOfStars = { lastInvulnerability: 0, cooldown: 10000, active: false, endTime: 0 }; // Вуаль звёзд ✨
+let electricTraps = [];          // Электрические ловушки ⚡
+let vortexTornadoes = [];        // Вихревые торнадо 🌪️
+let crystalSpikes = [];          // Кристаллические шипы 💎
+let plasmaBalls = [];            // Плазменные шары 🔵
+let strategicStrikes = { lastStrike: 0, cooldown: 5000, targetX: 0, targetY: 0 }; // Стратегический удар 🚀
+
+// Флаг для отображения цели стратегического удара
+let showStrategicTarget = false;
+let strategicTargetX = 0;
+let strategicTargetY = 0;
 
 // Система улучшений (добавлены новые улучшения)
 const upgradeSystem = {
@@ -279,6 +390,17 @@ function createStars() {
     }
 }
 
+// Запуск спавна врагов во время босса
+function startBossEnemySpawn() {
+    clearInterval(bossEnemySpawnInterval);
+    bossEnemySpawnInterval = setInterval(() => {
+        if (!bossActive || gamePaused || enemies.length >= 15) return;
+        
+        // Создаем небольшое количество врагов во время босса
+        createEnemies(1 + Math.floor(wave / 10));
+    }, 4000); // Спавн каждые 4 секунды
+}
+
 // Создание босса
 function createBoss() {
     bossActive = true;
@@ -327,7 +449,6 @@ function createBoss() {
         moveDirectionY: 1,
         moveTimerX: 0,
         moveTimerY: 0,
-        phase: 1,
         shield: roundNumber(bossHealth * 0.3),
         maxShield: roundNumber(bossHealth * 0.3),
         shieldActive: true,
@@ -378,6 +499,31 @@ function bossAttack() {
     if (now - boss.lastAttack > boss.attackCooldown) {
         boss.lastAttack = now;
         
+        // В фазе 2+ боссы могут использовать дополнительные атаки
+        if (boss.phase >= 2) {
+            const useAdditionalAttack = Math.random() < 0.5; // 50% шанс использовать дополнительную атаку
+            
+            if (useAdditionalAttack) {
+                switch(boss.type) {
+                    case 0: // Огненный босс
+                        createFireWaveAttack();
+                        showNotification('boss', 'Огненная волна!');
+                        break;
+                    case 1: // Ледяной босс
+                        createIceRainAttack();
+                        showNotification('boss', 'Ледяной дождь!');
+                        break;
+                    case 2: // Токсичный босс
+                        createPoisonCloudAttack();
+                        showNotification('boss', 'Токсичное облако!');
+                        break;
+                }
+                if (soundEnabled) playBossAttackSound();
+                return;
+            }
+        }
+        
+        // Основные атаки (всегда используются в фазе 1 и как запасные в фазах 2+)
         switch(boss.attackPattern) {
             case 'fireRing':
                 createFireRingAttack();
@@ -460,6 +606,83 @@ function createPoisonSpreadAttack() {
     }
 }
 
+// Огненная волна (дополнительная атака для Огненного босса, фаза 2+)
+function createFireWaveAttack() {
+    const numWaves = 3;
+    const projectilesPerWave = 12;
+    
+    for (let wave = 0; wave < numWaves; wave++) {
+        setTimeout(() => {
+            for (let i = 0; i < projectilesPerWave; i++) {
+                const angle = (Math.PI * 2 / projectilesPerWave) * i;
+                const speed = 2 + wave * 0.5; // Каждая следующая волна быстрее
+                
+                bossProjectiles.push({
+                    x: boss.x,
+                    y: boss.y,
+                    radius: 6,
+                    speed: speed,
+                    damage: 8 + wave * 2,
+                    angle: angle,
+                    color: '#ff6600',
+                    type: 'fireWave',
+                    life: 300
+                });
+            }
+        }, wave * 200); // Волны с задержкой 200мс
+    }
+}
+
+// Ледяной дождь (дополнительная атака для Ледяного босса, фаза 2+)
+function createIceRainAttack() {
+    const numShards = 20;
+    
+    for (let i = 0; i < numShards; i++) {
+        setTimeout(() => {
+            const x = boss.x + (Math.random() - 0.5) * 200;
+            const y = boss.y - 100 - Math.random() * 100;
+            
+            bossProjectiles.push({
+                x: x,
+                y: y,
+                radius: 4,
+                speed: 3 + Math.random() * 2,
+                damage: 6,
+                angle: Math.PI / 2 + (Math.random() - 0.5) * 0.3, // Падают вниз с небольшим разбросом
+                color: '#66ccff',
+                type: 'iceShard',
+                life: 400
+            });
+        }, i * 50); // Снаряды появляются с задержкой 50мс
+    }
+}
+
+// Токсичное облако (дополнительная атака для Токсичного босса, фаза 2+)
+function createPoisonCloudAttack() {
+    const numClouds = 5;
+    
+    for (let i = 0; i < numClouds; i++) {
+        const angle = (Math.PI * 2 / numClouds) * i;
+        const distance = 100;
+        const targetX = boss.x + Math.cos(angle) * distance;
+        const targetY = boss.y + Math.sin(angle) * distance;
+        
+        bossProjectiles.push({
+            x: targetX,
+            y: targetY,
+            radius: 15,
+            speed: 0.5, // Медленное движение
+            damage: 3,
+            angle: Math.random() * Math.PI * 2,
+            color: '#66ff66',
+            type: 'poisonCloud',
+            life: 600, // Долго существует
+            expanding: true,
+            maxRadius: 25
+        });
+    }
+}
+
 // Обновление босса
 function updateBoss(deltaTime) {
     if (!bossActive || !boss) return;
@@ -472,8 +695,16 @@ function updateBoss(deltaTime) {
     if (boss.phase === 3) {
         // Фаза 3 (последняя) - преследование игрока
         const angleToPlayer = Math.atan2(player.y - boss.y, player.x - boss.x);
-        boss.x += Math.cos(angleToPlayer) * bossSpeed * 1.3; // На 30% быстрее при преследовании
-        boss.y += Math.sin(angleToPlayer) * bossSpeed * 1.3;
+        const newX = boss.x + Math.cos(angleToPlayer) * bossSpeed * 1.3;
+        const newY = boss.y + Math.sin(angleToPlayer) * bossSpeed * 1.3;
+        
+        // Проверяем границы
+        if (newX >= margin && newX <= canvas.width - margin) {
+            boss.x = newX;
+        }
+        if (newY >= margin && newY <= canvas.height - margin) {
+            boss.y = newY;
+        }
     } else {
         // Фаза 1 и 2 - случайное движение
         
@@ -542,11 +773,12 @@ function updateBoss(deltaTime) {
     
     for (let i = bullets.length - 1; i >= 0; i--) {
         const bullet = bullets[i];
-        const distance = Math.sqrt(
-            Math.pow(bullet.x - boss.x, 2) + Math.pow(bullet.y - boss.y, 2)
-        );
+        const dx = bullet.x - boss.x;
+        const dy = bullet.y - boss.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const radiusSum = bullet.radius + boss.radius;
         
-        if (distance < bullet.radius + boss.radius) {
+        if (distanceSquared < radiusSum * radiusSum) {
             if (boss.shieldActive && boss.shield > 0) {
                 boss.shield -= bullet.damage;
                 createParticles(bullet.x, bullet.y, 8, '#4fc3f7', 'shield');
@@ -588,24 +820,34 @@ function updateBoss(deltaTime) {
         }
     }
     
-    const distanceToPlayer = Math.sqrt(
-        Math.pow(player.x - boss.x, 2) + Math.pow(player.y - boss.y, 2)
-    );
+    const dxToPlayer = player.x - boss.x;
+    const dyToPlayer = player.y - boss.y;
+    const distanceToPlayerSquared = dxToPlayer * dxToPlayer + dyToPlayer * dyToPlayer;
+    const playerRadiusSum = player.radius + boss.radius;
     
-    if (distanceToPlayer < player.radius + boss.radius) {
+    if (distanceToPlayerSquared < playerRadiusSum * playerRadiusSum) {
+        // Если игрок неуязвим, игнорируем столкновение
+        if (invulnerable) {
+            return;
+        }
+        
         if (shieldActive && player.shield > 0) {
             player.shield -= boss.damage * 2;
             if (player.shield < 0) player.shield = 0;
             
-            const pushAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            const pushAngle = Math.atan2(dyToPlayer, dxToPlayer);
             player.x += Math.cos(pushAngle) * 25;
             player.y += Math.sin(pushAngle) * 25;
             
             createParticles(player.x, player.y, 10, '#4fc3f7', 'shield');
         } else {
-            player.health -= boss.damage;
+            // Проверяем неуязвимость от Вуали звёзд
+            if (!veilOfStars.active) {
+                player.health -= applyVeilDamageReduction(boss.damage);
+            }
+            activateDamageEffect(); // Красный эффект по краям
             
-            const pushAngle = Math.atan2(player.y - boss.y, player.x - boss.x);
+            const pushAngle = Math.atan2(dyToPlayer, dxToPlayer);
             player.x += Math.cos(pushAngle) * 30;
             player.y += Math.sin(pushAngle) * 30;
             
@@ -613,6 +855,9 @@ function updateBoss(deltaTime) {
             
             // Добавляем тряску экрана при уроне от босса
             startScreenShake(8, 15);
+            
+            // Добавляем красную рамку при уроне
+            startDamageBorderEffect();
             
             // Применяем эффекты босса в зависимости от типа
             applyBossEffect(boss.type);
@@ -624,6 +869,13 @@ function updateBoss(deltaTime) {
                 
                 if (lives <= 0) {
                     gameOver();
+                } else {
+                    player.health = player.maxHealth;
+                    player.x = canvas.width / 2;
+                    player.y = canvas.height / 2;
+                    
+                    // Активируем неуязвимость после потери жизни
+                    activateInvulnerability();
                 }
             }
         }
@@ -636,22 +888,43 @@ function updateBossProjectiles(deltaTime) {
         const projectile = bossProjectiles[i];
         const projSpeed = projectile.speed * (deltaTime / 16.67);
         
+        // Особое поведение для токсичных облаков
+        if (projectile.type === 'poisonCloud' && projectile.expanding) {
+            // Облака расширяются со временем
+            if (projectile.radius < projectile.maxRadius) {
+                projectile.radius += 0.1;
+            }
+            // Облака движутся медленнее и могут менять направление
+            projectile.angle += (Math.random() - 0.5) * 0.1;
+        }
+        
         projectile.x += Math.cos(projectile.angle) * projSpeed;
         projectile.y += Math.sin(projectile.angle) * projSpeed;
         
         projectile.life--;
         
-        const distanceToPlayer = Math.sqrt(
-            Math.pow(player.x - projectile.x, 2) + Math.pow(player.y - projectile.y, 2)
-        );
+        const dx = player.x - projectile.x;
+        const dy = player.y - projectile.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const radiusSum = player.radius + projectile.radius;
         
-        if (distanceToPlayer < player.radius + projectile.radius) {
+        if (distanceSquared < radiusSum * radiusSum) {
+            // Если игрок неуязвим, игнорируем попадание
+            if (invulnerable) {
+                bossProjectiles.splice(i, 1);
+                continue;
+            }
+            
             if (shieldActive && player.shield > 0) {
                 player.shield -= projectile.damage;
                 if (player.shield < 0) player.shield = 0;
                 createParticles(projectile.x, projectile.y, 6, '#4fc3f7', 'shield');
             } else {
-                player.health -= projectile.damage;
+                // Проверяем неуязвимость от Вуали звёзд
+                if (!veilOfStars.active) {
+                    player.health -= applyVeilDamageReduction(projectile.damage);
+                }
+                startDamageBorderEffect(); // Красный эффект по краям
                 createParticles(projectile.x, projectile.y, 8, projectile.color, 'hit');
                 
                 // Применяем эффекты босса при попадании снаряда
@@ -666,12 +939,22 @@ function updateBossProjectiles(deltaTime) {
                     
                     if (lives <= 0) {
                         gameOver();
+                    } else {
+                        player.health = player.maxHealth;
+                        player.x = canvas.width / 2;
+                        player.y = canvas.height / 2;
+                        
+                        // Активируем неуязвимость после потери жизни
+                        activateInvulnerability();
                     }
                 }
             }
             
-            bossProjectiles.splice(i, 1);
-            continue;
+            // Токсичные облака не исчезают после попадания
+            if (projectile.type !== 'poisonCloud') {
+                bossProjectiles.splice(i, 1);
+                continue;
+            }
         }
         
         if (projectile.life <= 0 ||
@@ -772,6 +1055,10 @@ function handleKeyDown(e) {
         case ' ':
             if (gameActive) togglePause();
             break;
+        case 'q':
+        case 'Q':
+            skipWaveTimer();
+            break;
         case 'Shift':
             activateShield();
             break;
@@ -839,6 +1126,12 @@ function handleMouseMove(e) {
     
     player.mouseX = mouseX;
     player.mouseY = mouseY;
+    
+    // Обновляем цель для стратегического удара только если не активен прицел
+    if (!showStrategicTarget) {
+        strategicTargetX = mouseX;
+        strategicTargetY = mouseY;
+    }
 }
 
 // Переключение режима стрельбы
@@ -885,9 +1178,9 @@ function autoShoot() {
     let closestDistance = Infinity;
     
     for (const enemy of enemies) {
-        const distance = Math.sqrt(
-            Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
-        );
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const distance = dx * dx + dy * dy;
         
         if (distance < closestDistance) {
             closestDistance = distance;
@@ -1040,11 +1333,12 @@ function createHealthCore(x, y) {
 // Улучшенная система частиц для эффектов
 function createParticles(x, y, count, color, type = 'explosion') {
     // Удаляем старые частицы, если их слишком много
-    if (particles.length > MAX_PARTICLES * 0.8) {
+    const maxParticlesDuringBoss = bossActive ? MAX_PARTICLES * 0.5 : MAX_PARTICLES;
+    if (particles.length > maxParticlesDuringBoss * 0.8) {
         particles = particles.filter(p => p.life > 10);
     }
     
-    const particlesToCreate = Math.min(count, MAX_PARTICLES - particles.length);
+    const particlesToCreate = Math.min(count, maxParticlesDuringBoss - particles.length);
     
     for (let i = 0; i < particlesToCreate; i++) {
         let particle = {
@@ -1061,7 +1355,7 @@ function createParticles(x, y, count, color, type = 'explosion') {
         switch(type) {
             case 'explosion':
                 const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 6 + 2;
+                const speed = Math.random() * 4 + 1; // Уменьшили максимальную скорость с 8 до 5
                 particle.speedX = Math.cos(angle) * speed;
                 particle.speedY = Math.sin(angle) * speed;
                 particle.radius = Math.random() * 4 + 1;
@@ -1082,7 +1376,7 @@ function createParticles(x, y, count, color, type = 'explosion') {
                 
             case 'critical':
                 const critAngle = Math.random() * Math.PI * 2;
-                const critSpeed = Math.random() * 8 + 3;
+                const critSpeed = Math.random() * 8 + 3; // Уменьшили максимальную скорость с 11 до 11
                 particle.speedX = Math.cos(critAngle) * critSpeed;
                 particle.speedY = Math.sin(critAngle) * critSpeed;
                 particle.radius = Math.random() * 5 + 2;
@@ -1229,11 +1523,53 @@ function createEnemies(count) {
     }
 }
 
+// Вспомогательная функция для обработки смерти врага
+function handleEnemyDeath(enemy, index) {
+    // Очки для рекорда
+    let recordPoints = 10 + wave * 1.5;
+    if (enemy.type === 'fast') recordPoints *= 1.3;
+    if (enemy.type === 'tank') recordPoints *= 1.8;
+    if (enemy.type === 'shooter') recordPoints *= 2;
+    score += roundNumber(recordPoints);
+    
+    // Валюта для улучшений
+    let moneyReward = 2 + wave * 0.3;
+    if (enemy.type === 'fast') moneyReward *= 1.2;
+    if (enemy.type === 'tank') moneyReward *= 1.5;
+    if (enemy.type === 'shooter') moneyReward *= 1.8;
+    money += roundNumber(moneyReward);
+    
+    updateMoney();
+    updateScore();
+    
+    // Получение опыта
+    const expGain = 10 * (1 + upgradeSystem.experienceGain.level * 0.2);
+    player.experience += expGain;
+    updateExperienceBar();
+    checkLevelUp();
+    
+    createParticles(enemy.x, enemy.y, 10, '#ff9900');
+    
+    // Шанс выпадения ядра здоровья (30%)
+    if (Math.random() < 0.3) {
+        createHealthCore(enemy.x, enemy.y);
+    }
+    
+    enemies.splice(index, 1);
+    
+    if (soundEnabled) playEnemyDestroySound();
+}
+
 // Обновление состояния игры
 function updateGame(deltaTime) {
     if (!gameActive || gamePaused || weaponSelectionPaused) return;
     
     gameTime++;
+    
+    // Проверяем окончание неуязвимости
+    if (invulnerable && Date.now() > invulnerableEndTime) {
+        invulnerable = false;
+    }
     
     // Проверяем, нужно ли обновить отображение
     if (!bossActive && enemies.length === 0) {
@@ -1292,83 +1628,49 @@ function updateGame(deltaTime) {
             
             if (bullet.enemiesHit.includes(j)) continue;
             
-            const distance = Math.sqrt(
-                Math.pow(bullet.x - enemy.x, 2) + Math.pow(bullet.y - enemy.y, 2)
-            );
+            const dx = bullet.x - enemy.x;
+            const dy = bullet.y - enemy.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const radiusSum = bullet.radius + enemy.radius;
             
-            if (distance < bullet.radius + enemy.radius) {
-                    enemy.health -= bullet.damage;
-                    bullet.enemiesHit.push(j);
-                    
-                    createParticles(bullet.x, bullet.y, 3, '#ff3300', 'hit');
-                    
-                    // Кража жизни
-                    if (player.lifeSteal > 0 && enemy.health <= 0) {
-                        const healAmount = roundNumber(bullet.damage * (player.lifeSteal / 100));
-                        player.health = Math.min(player.maxHealth, player.health + healAmount);
-                    }
-                    
-                    if (enemy.health <= 0) {
-                        // Очки для рекорда
-                        let recordPoints = 10 + wave * 1.5;
-                        if (enemy.type === 'fast') recordPoints *= 1.3;
-                        if (enemy.type === 'tank') recordPoints *= 1.8;
-                        if (enemy.type === 'shooter') recordPoints *= 2;
-                        score += roundNumber(recordPoints);
-                        
-                        // Валюта для улучшений (уменьшена в 5 раз)
-                        let moneyReward = 2 + wave * 0.3;
-                        if (enemy.type === 'fast') moneyReward *= 1.2;
-                        if (enemy.type === 'tank') moneyReward *= 1.5;
-                        if (enemy.type === 'shooter') moneyReward *= 1.8;
-                        money += roundNumber(moneyReward);
-                        
-                        updateMoney();
-                        updateScore();
-                        
-                        // Получение опыта
-                        const expGain = 10 * (1 + upgradeSystem.experienceGain.level * 0.2);
-                        player.experience += expGain;
-                        updateExperienceBar();
-                        checkLevelUp();
-                        
-                        createParticles(enemy.x, enemy.y, 10, '#ff9900', 'explosion');
-                        
-                        // Добавляем небольшую тряску при уничтожении врага
-                        startScreenShake(2, 5);
-                        
-                        // Шанс выпадения ядра здоровья (30%)
-                        if (Math.random() < 0.3) {
-                            createHealthCore(enemy.x, enemy.y);
-                        }
-                        
-                        enemies.splice(j, 1);
-                        
-                        if (soundEnabled) playEnemyDestroySound();
-                    } else {
-                        if (soundEnabled) playHitSound();
-                        
-                        if (bullet.ricochetCount > 0) {
-                            bullet.ricochetCount--;
-                            
-                            const normalAngle = Math.atan2(bullet.y - enemy.y, bullet.x - enemy.x);
-                            const incidenceAngle = bullet.angle;
-                            bullet.angle = 2 * normalAngle - incidenceAngle + Math.PI;
-                            
-                            bullet.x += Math.cos(bullet.angle) * 4;
-                            bullet.y += Math.sin(bullet.angle) * 4;
-                            
-                            continue;
-                        }
-                    }
-                    
-                    if (bullet.piercingCount <= 0 || bullet.enemiesHit.length >= bullet.piercingCount + 1) {
-                        bullets.splice(i, 1);
-                    }
-                    
-                    break;
+            if (distanceSquared < radiusSum * radiusSum) {
+                enemy.health -= bullet.damage;
+                bullet.enemiesHit.push(j);
+                
+                createParticles(bullet.x, bullet.y, 3, '#ff3300', 'hit');
+                
+                // Кража жизни
+                if (player.lifeSteal > 0 && enemy.health <= 0) {
+                    const healAmount = roundNumber(bullet.damage * (player.lifeSteal / 100));
+                    player.health = Math.min(player.maxHealth, player.health + healAmount);
                 }
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, j);
+                } else {
+                    if (soundEnabled) playHitSound();
+                    
+                    if (bullet.ricochetCount > 0) {
+                        bullet.ricochetCount--;
+                        
+                        const normalAngle = Math.atan2(bullet.y - enemy.y, bullet.x - enemy.x);
+                        const incidenceAngle = bullet.angle;
+                        bullet.angle = 2 * normalAngle - incidenceAngle + Math.PI;
+                        
+                        bullet.x += Math.cos(bullet.angle) * 4;
+                        bullet.y += Math.sin(bullet.angle) * 4;
+                        
+                        continue;
+                    }
+                }
+                
+                if (bullet.piercingCount <= 0 || bullet.enemiesHit.length >= bullet.piercingCount + 1) {
+                    bullets.splice(i, 1);
+                }
+                
+                break;
             }
+        }
     }
     
     // Обновление врагов
@@ -1387,11 +1689,17 @@ function updateGame(deltaTime) {
         }
         
         // Проверка столкновения
-        const distanceToPlayer = Math.sqrt(
-            Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
-        );
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const radiusSum = player.radius + enemy.radius;
         
-        if (distanceToPlayer < player.radius + enemy.radius) {
+        if (distanceSquared < radiusSum * radiusSum) {
+            // Если игрок неуязвим, игнорируем столкновение
+            if (invulnerable) {
+                continue;
+            }
+            
             if (shieldActive && player.shield > 0) {
                 player.shield -= enemy.damage * 2;
                 if (player.shield < 0) player.shield = 0;
@@ -1404,7 +1712,11 @@ function updateGame(deltaTime) {
                 
                 if (soundEnabled) playShieldBlockSound();
             } else {
-                player.health -= enemy.damage;
+                // Проверяем неуязвимость от Вуали звёзд
+                if (!veilOfStars.active) {
+                    player.health -= applyVeilDamageReduction(enemy.damage);
+                }
+                startDamageBorderEffect(); // Красный эффект по краям
                 
                 const pushAngle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
                 player.x += Math.cos(pushAngle) * 15;
@@ -1426,6 +1738,9 @@ function updateGame(deltaTime) {
                         player.health = player.maxHealth;
                         player.x = canvas.width / 2;
                         player.y = canvas.height / 2;
+                        
+                        // Активируем неуязвимость после потери жизни
+                        activateInvulnerability();
                     }
                 }
                 
@@ -1452,18 +1767,29 @@ function updateGame(deltaTime) {
             continue;
         }
         
-        const distanceToPlayer = Math.sqrt(
-            Math.pow(player.x - bullet.x, 2) + Math.pow(player.y - bullet.y, 2)
-        );
+        const dx = player.x - bullet.x;
+        const dy = player.y - bullet.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const radiusSum = player.radius + bullet.radius;
         
-        if (distanceToPlayer < player.radius + bullet.radius) {
+        if (distanceSquared < radiusSum * radiusSum) {
+            // Если игрок неуязвим, игнорируем попадание
+            if (invulnerable) {
+                enemyBullets.splice(i, 1);
+                continue;
+            }
+            
             if (shieldActive && player.shield > 0) {
                 player.shield -= bullet.damage;
                 if (player.shield < 0) player.shield = 0;
                 
                 createParticles(bullet.x, bullet.y, 5, '#4fc3f7', 'shield');
             } else {
-                player.health -= bullet.damage;
+                // Проверяем неуязвимость от Вуали звёзд
+                if (!veilOfStars.active) {
+                    player.health -= applyVeilDamageReduction(bullet.damage);
+                }
+                startDamageBorderEffect(); // Красный эффект по краям
                 createParticles(bullet.x, bullet.y, 8, bullet.color, 'hit');
                 
                 // Добавляем тряску экрана при уроне от пули врага
@@ -1476,6 +1802,13 @@ function updateGame(deltaTime) {
                     
                     if (lives <= 0) {
                         gameOver();
+                    } else {
+                        player.health = player.maxHealth;
+                        player.x = canvas.width / 2;
+                        player.y = canvas.height / 2;
+                        
+                        // Активируем неуязвимость после потери жизни
+                        activateInvulnerability();
                     }
                 }
             }
@@ -1491,12 +1824,30 @@ function updateGame(deltaTime) {
         const particleSpeedY = particle.speedY * (deltaTime / 16.67);
         particle.x += particleSpeedX;
         particle.y += particleSpeedY;
+        
+        // Применение гравитации
+        if (particle.gravity) {
+            particle.speedY += particle.gravity * (deltaTime / 16.67);
+        }
+        
+        // Замедление
+        particle.speedX *= 0.995; // Уменьшили замедление для более плавного движения
+        particle.speedY *= 0.995;
+        
+        // Обновление следа для критических частиц
+        if (particle.trail) {
+            particle.trail.push({x: particle.x, y: particle.y});
+            if (particle.trail.length > 5) {
+                particle.trail.shift();
+            }
+        }
+        
         particle.life--;
         
         // Удаляем мертвые частицы или частицы за пределами экрана
         if (particle.life <= 0 || 
-            particle.x < -50 || particle.x > canvas.width + 50 ||
-            particle.y < -50 || particle.y > canvas.height + 50) {
+            particle.x < -100 || particle.x > canvas.width + 100 ||
+            particle.y < -100 || particle.y > canvas.height + 100) {
             particles.splice(i, 1);
         }
     }
@@ -1504,6 +1855,15 @@ function updateGame(deltaTime) {
     // Дополнительная очистка, если частиц слишком много
     if (particles.length > MAX_PARTICLES) {
         particles = particles.slice(-MAX_PARTICLES);
+    }
+    
+    // Принудительная очистка частиц за пределами экрана (каждые 60 кадров ~ 1 секунда)
+    if (gameTime % 60 === 0) {
+        particles = particles.filter(p => 
+            p.x >= -200 && p.x <= canvas.width + 200 &&
+            p.y >= -200 && p.y <= canvas.height + 200 &&
+            p.life > 0
+        );
     }
     
     // Обновление уведомлений
@@ -1524,11 +1884,12 @@ function updateGame(deltaTime) {
         core.pulse += 0.1;
         
         // Проверка столкновения с игроком
-        const distanceToPlayer = Math.sqrt(
-            Math.pow(player.x - core.x, 2) + Math.pow(player.y - core.y, 2)
-        );
+        const dx = player.x - core.x;
+        const dy = player.y - core.y;
+        const distanceSquared = dx * dx + dy * dy;
+        const radiusSum = player.radius + core.radius;
         
-        if (distanceToPlayer < player.radius + core.radius) {
+        if (distanceSquared < radiusSum * radiusSum) {
             if (player.health < player.maxHealth) {
                 const healAmount = Math.min(10 + wave * 2, player.maxHealth - player.health);
                 player.health += roundNumber(healAmount);
@@ -1597,7 +1958,11 @@ function showWeaponSelection() {
     // Получаем список всех доступных оружий
     const allWeapons = [
         'orbitalShields', 'companionDrones', 'laserBeams', 'chainLightning',
-        'damageWaves', 'meteors', 'fireBalls', 'iceSpikes', 'homingMissiles', 'bulletRing'
+        'damageWaves', 'meteors', 'fireBalls', 'iceSpikes', 'homingMissiles', 'bulletRing',
+        // Новые оружия:
+        'magneticMines', 'lightSabers', 'toxicClouds', 'sniperLasers',
+        'veilOfStars', 'electricTraps', 'vortexTornadoes', 'crystalSpikes',
+        'plasmaBalls', 'strategicStrike'
     ];
     
     const maxWeapons = player.playerLevel >= 30 ? 5 : 4;
@@ -1651,8 +2016,22 @@ function showWeaponSelection() {
     // Очищаем предыдущие варианты
     container.innerHTML = '<h2>Выберите дополнительное оружие</h2>';
     
+    // Добавляем кнопку обновления
+    const refreshButton = document.createElement('button');
+    refreshButton.className = 'refresh-btn';
+    refreshButton.innerHTML = `🔄 Обновить (${refreshCost} 💰)`;
+    refreshButton.onclick = refreshWeaponSelection;
+    
+    // Отключаем кнопку если недостаточно денег
+    if (money < refreshCost) {
+        refreshButton.disabled = true;
+    }
+    
+    container.appendChild(refreshButton);
+    
     // Создаем контейнер для опций
     const optionsContainer = document.createElement('div');
+    optionsContainer.className = 'weapon-options-grid';
     
     // Добавляем варианты оружия
     selectedWeapons.forEach((weaponType, index) => {
@@ -1676,19 +2055,53 @@ function showWeaponSelection() {
     overlay.style.display = 'flex';
 }
 
+// Обновление выбора оружия
+function refreshWeaponSelection() {
+    // Проверяем, достаточно ли денег
+    if (money < refreshCost) {
+        showNotification('money', `Недостаточно денег! Нужно ${refreshCost} 💰`);
+        return;
+    }
+    
+    // Списываем деньги
+    money -= refreshCost;
+    updateMoney();
+    
+    // Увеличиваем цену для следующего обновления (на 20% от текущей цены)
+    refreshCost = Math.floor(refreshCost * 1.2);
+    if (refreshCost < 5) refreshCost = 5; // Минимальная цена
+    
+    // Показываем уведомление
+    showNotification('refresh', `Выбор оружия обновлен! Следующая цена: ${refreshCost} 💰`);
+    
+    // Перегенерируем выбор оружия
+    showWeaponSelection();
+}
+
 // Получить данные оружия
 function getWeaponData(type) {
     const weapons = {
-        orbitalShields: { name: '🛡️ Орбитальные щиты', description: 'Щиты вращаются вокруг игрока и наносят урон врагам' },
+        orbitalShields: { name: '🛡️ Орбитальные щиты', description: 'Щиты блокируют вражеские снаряды. Восстановление 5 сек. На 10 уровне: 2 удара + отражение' },
         companionDrones: { name: '🤖 Дроны-помощники', description: 'Дроны автоматически стреляют по ближайшим врагам' },
         laserBeams: { name: '⚡ Лазерные лучи', description: 'Лучи пронзают врагов по прямой линии' },
         chainLightning: { name: '⚡ Молнии', description: 'Цепные молнии перепрыгивают между врагами' },
         damageWaves: { name: '🌊 Волны урона', description: 'Периодические волны урона расходятся от игрока' },
         meteors: { name: '☄️ Метеориты', description: 'Метеориты падают на карту, нанося урон в области' },
         fireBalls: { name: '🔥 Огненные шары', description: 'Шары огня летают по траектории вокруг игрока' },
-        iceSpikes: { name: '❄️ Ледяные шипы', description: 'Шипы появляются перед игроком в направлении движения' },
+        iceSpikes: { name: '❄️ Ледяные шипы', description: 'Основной шип в случайном направлении + кольцо маленьких шипов' },
         homingMissiles: { name: '🚀 Снаряды с наведением', description: 'Снаряды автоматически наводятся на ближайших врагов' },
-        bulletRing: { name: '💫 Кольцо из пуль', description: 'Периодически выпускает кольцо из пуль во все стороны' }
+        bulletRing: { name: '💫 Кольцо из пуль', description: 'Периодически выпускает кольцо из пуль во все стороны' },
+        // Новые оружия:
+        magneticMines: { name: '🧲 Магнитные мины', description: 'Мины притягивают врагов и наносят урон' },
+        lightSabers: { name: '⚔️ Световые клинки', description: 'Вращающиеся клинки разрубают врагов' },
+        toxicClouds: { name: '☁️ Токсичные облака', description: 'Облака замедляют и отравляют врагов' },
+        sniperLasers: { name: '🎯 Снайперские лазеры', description: 'Заряженный выстрел по самому сильному врагу' },
+        veilOfStars: { name: '✨ Вуаль звёзд', description: 'Поглощает урон и даёт неуязвимость' },
+        electricTraps: { name: '⚡ Электрические ловушки', description: 'Ловушки срабатывают при приближении врагов' },
+        vortexTornadoes: { name: '🌪️ Вихревые торнадо', description: 'Торнадо отталкивают врагов с пути' },
+        crystalSpikes: { name: '💎 Кристаллические шипы', description: 'Кристаллы вращаются и стреляют во врагов' },
+        plasmaBalls: { name: '🔵 Плазменные шары', description: 'Шары стреляют веером по нескольким врагам' },
+        strategicStrike: { name: '🚀 Стратегический удар', description: 'Авиаудар в указанное место (автоматический)' }
     };
     return weapons[type] || { name: 'Неизвестное оружие', description: '' };
 }
@@ -1727,15 +2140,22 @@ function initWeapon(type) {
     
     switch(type) {
         case 'orbitalShields':
-            // Создаем щиты вокруг игрока
-            const shieldCount = Math.min(2 + weapon.level, 6);
+            // Создаем щиты-сегменты вокруг игрока
+            const shieldCount = Math.min(2 + Math.floor(weapon.level / 2), 6);
             orbitalShields = [];
             for (let i = 0; i < shieldCount; i++) {
+                const maxHits = weapon.level >= 10 ? 2 : 1; // На 10 уровне щиты держат 2 удара
                 orbitalShields.push({
                     angle: (Math.PI * 2 / shieldCount) * i,
-                    distance: 40 + weapon.level * 5,
-                    radius: 8 + weapon.level * 2,
-                    rotationSpeed: 0.03 + weapon.level * 0.005
+                    distance: 35 + weapon.level * 3,
+                    radius: 12 + weapon.level,
+                    rotationSpeed: 0.02 + weapon.level * 0.003,
+                    maxHits: maxHits,
+                    currentHits: maxHits,
+                    recoveryTime: 5000 - (weapon.level * 200), // Восстановление уменьшается с уровнем
+                    lastHitTime: 0,
+                    broken: false,
+                    hasReflection: weapon.level >= 10 // 50% шанс отражения на 10 уровне
                 });
             }
             break;
@@ -1756,6 +2176,71 @@ function initWeapon(type) {
         case 'fireBalls':
             // Инициализация будет в updateFireBalls
             fireBalls = [];
+            break;
+        // Новые оружия:
+        case 'magneticMines':
+            magneticMines = [];
+            break;
+        case 'lightSabers':
+            const saberCount = Math.min(2 + weapon.level, 4);
+            lightSabers = [];
+            for (let i = 0; i < saberCount; i++) {
+                lightSabers.push({
+                    angle: (Math.PI * 2 / saberCount) * i,
+                    distance: 30 + weapon.level * 5,
+                    length: 40 + weapon.level * 5,
+                    rotationSpeed: 0.08 + weapon.level * 0.01,
+                    damage: roundNumber(player.damage * 0.4 * weapon.level)
+                });
+            }
+            break;
+        case 'toxicClouds':
+            toxicClouds = [];
+            break;
+        case 'sniperLasers':
+            sniperLasers.cooldown = Math.max(3000 - weapon.level * 200, 1500);
+            break;
+        case 'veilOfStars':
+            veilOfStars.lastInvulnerability = 0;
+            veilOfStars.active = true;
+            veilOfStars.endTime = 0;
+            break;
+        case 'electricTraps':
+            electricTraps = [];
+            break;
+        case 'vortexTornadoes':
+            vortexTornadoes = [];
+            break;
+        case 'crystalSpikes':
+            const spikeCount = Math.min(6 + weapon.level * 2, 12);
+            crystalSpikes = [];
+            for (let i = 0; i < spikeCount; i++) {
+                crystalSpikes.push({
+                    angle: (Math.PI * 2 / spikeCount) * i,
+                    distance: 40 + weapon.level * 10,
+                    rotationSpeed: 0.03 + weapon.level * 0.005,
+                    lastShot: 0,
+                    fireRate: Math.max(1500 - weapon.level * 150, 800),
+                    damage: roundNumber(player.damage * 0.7 * weapon.level)
+                });
+            }
+            break;
+        case 'plasmaBalls':
+            const ballCount = Math.min(2 + weapon.level, 4);
+            plasmaBalls = [];
+            for (let i = 0; i < ballCount; i++) {
+                plasmaBalls.push({
+                    angle: (Math.PI * 2 / ballCount) * i,
+                    distance: 60 + weapon.level * 10,
+                    rotationSpeed: 0.04 + weapon.level * 0.005,
+                    lastShot: 0,
+                    fireRate: Math.max(2000 - weapon.level * 200, 1000),
+                    damage: roundNumber(player.damage * 0.5 * weapon.level)
+                });
+            }
+            break;
+        case 'strategicStrike':
+            strategicStrikes.cooldown = Math.max(5000 - weapon.level * 300, 2000);
             break;
     }
 }
@@ -1794,54 +2279,114 @@ function updateWeapons(deltaTime) {
             case 'bulletRing':
                 updateBulletRing(weapon, deltaTime);
                 break;
+            // Новые оружия:
+            case 'magneticMines':
+                updateMagneticMines(weapon, deltaTime);
+                break;
+            case 'lightSabers':
+                updateLightSabers(weapon, deltaTime);
+                break;
+            case 'toxicClouds':
+                updateToxicClouds(weapon, deltaTime);
+                break;
+            case 'sniperLasers':
+                updateSniperLasers(weapon, deltaTime);
+                break;
+            case 'veilOfStars':
+                updateVeilOfStars(weapon, deltaTime);
+                break;
+            case 'electricTraps':
+                updateElectricTraps(weapon, deltaTime);
+                break;
+            case 'vortexTornadoes':
+                updateVortexTornadoes(weapon, deltaTime);
+                break;
+            case 'crystalSpikes':
+                updateCrystalSpikes(weapon, deltaTime);
+                break;
+            case 'plasmaBalls':
+                updatePlasmaBalls(weapon, deltaTime);
+                break;
+            case 'strategicStrike':
+                updateStrategicStrike(weapon, deltaTime);
+                break;
         }
     }
 }
 
 // Обновление орбитальных щитов
 function updateOrbitalShields(weapon, deltaTime) {
-    // Обновляем позиции щитов
+    const now = Date.now();
+    
     for (const shield of orbitalShields) {
+        // Восстановление сломанных щитов
+        if (shield.broken && now - shield.lastHitTime > shield.recoveryTime) {
+            shield.broken = false;
+            shield.currentHits = shield.maxHits;
+            createParticles(player.x, player.y, 3, '#4fc3f7', 'shield');
+        }
+        
+        // Пропускаем сломанные щиты
+        if (shield.broken) continue;
+        
         shield.angle += shield.rotationSpeed * (deltaTime / 16.67);
         if (shield.angle > Math.PI * 2) shield.angle -= Math.PI * 2;
         
         const shieldX = player.x + Math.cos(shield.angle) * shield.distance;
         const shieldY = player.y + Math.sin(shield.angle) * shield.distance;
         
-        // Проверка столкновения с врагами
-        for (let i = enemies.length - 1; i >= 0; i--) {
-            const enemy = enemies[i];
-            const distance = Math.sqrt(
-                Math.pow(shieldX - enemy.x, 2) + Math.pow(shieldY - enemy.y, 2)
-            );
+        // Блокирование вражеских снарядов
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+            const bullet = enemyBullets[i];
+            const dx = shieldX - bullet.x;
+            const dy = shieldY - bullet.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const radiusSum = shield.radius + bullet.radius;
             
-            if (distance < shield.radius + enemy.radius) {
-                const damage = roundNumber(player.damage * 0.5 * weapon.level);
-                enemy.health -= damage;
-                createParticles(enemy.x, enemy.y, 5, '#4fc3f7', 'shield');
+            if (distanceSquared < radiusSum * radiusSum) {
+                shield.currentHits--;
+                createParticles(bullet.x, bullet.y, 5, '#4fc3f7', 'shield');
                 
-                if (enemy.health <= 0) {
-                    handleEnemyDeath(enemy, i);
+                // Отражение снаряда (50% шанс на 10 уровне)
+                if (shield.hasReflection && Math.random() < 0.5) {
+                    // Отражаем снаряд назад к врагам
+                    bullet.angle = Math.atan2(-dy, -dx);
+                    bullet.speed = 5;
+                    bullet.damage *= 0.8;
+                    bullet.isReflected = true;
+                    createParticles(bullet.x, bullet.y, 3, '#ffff00', 'reflect');
                 } else {
-                    if (soundEnabled) playHitSound();
+                    enemyBullets.splice(i, 1);
                 }
+                
+                if (shield.currentHits <= 0) {
+                    shield.broken = true;
+                    shield.lastHitTime = now;
+                    createParticles(shieldX, shieldY, 8, '#ff0000', 'shield');
+                }
+                break;
             }
         }
         
-        // Проверка столкновения с боссом
-        if (bossActive && boss) {
-            const distance = Math.sqrt(
-                Math.pow(shieldX - boss.x, 2) + Math.pow(shieldY - boss.y, 2)
-            );
+        // Блокирование снарядов босса (без отражения)
+        for (let i = bossProjectiles.length - 1; i >= 0; i--) {
+            const projectile = bossProjectiles[i];
+            const dx = shieldX - projectile.x;
+            const dy = shieldY - projectile.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const radiusSum = shield.radius + projectile.radius;
             
-            if (distance < shield.radius + boss.radius) {
-                const damage = roundNumber(player.damage * 0.3 * weapon.level);
-                if (boss.shieldActive && boss.shield > 0) {
-                    boss.shield -= damage;
-                } else {
-                    boss.health -= damage;
+            if (distanceSquared < radiusSum * radiusSum) {
+                shield.currentHits--;
+                createParticles(projectile.x, projectile.y, 5, '#4fc3f7', 'shield');
+                bossProjectiles.splice(i, 1);
+                
+                if (shield.currentHits <= 0) {
+                    shield.broken = true;
+                    shield.lastHitTime = now;
+                    createParticles(shieldX, shieldY, 8, '#ff0000', 'shield');
                 }
-                createParticles(boss.x, boss.y, 5, '#4fc3f7', 'shield');
+                break;
             }
         }
     }
@@ -1865,10 +2410,10 @@ function updateCompanionDrones(weapon, deltaTime) {
             let closestDistance = Infinity;
             
             for (const enemy of enemies) {
-                const distance = Math.sqrt(
-                    Math.pow(drone.x - enemy.x, 2) + Math.pow(drone.y - enemy.y, 2)
-                );
-                if (distance < closestDistance && distance < 400) {
+                const dx = drone.x - enemy.x;
+                const dy = drone.y - enemy.y;
+                const distance = dx * dx + dy * dy;
+                if (distance < closestDistance && distance < 160000) { // 400^2
                     closestDistance = distance;
                     closestEnemy = enemy;
                 }
@@ -1912,23 +2457,23 @@ function updateLaserBeams(weapon, deltaTime) {
         let closestDistance = Infinity;
         
         for (const enemy of enemies) {
-            const distance = Math.sqrt(
-                Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
-            );
+            const dx = player.x - enemy.x;
+            const dy = player.y - enemy.y;
+            const distance = dx * dx + dy * dy;
             if (distance < closestDistance) {
                 closestDistance = distance;
                 closestEnemy = enemy;
             }
         }
         
-        if (closestEnemy && closestDistance < 500) {
+        if (closestEnemy && closestDistance < 250000) { // 500^2
             const angle = Math.atan2(closestEnemy.y - player.y, closestEnemy.x - player.x);
             const beamCount = Math.min(1 + Math.floor(weapon.level / 2), 3);
             
             for (let i = 0; i < beamCount; i++) {
                 const spreadAngle = angle + (i - (beamCount - 1) / 2) * 0.15;
-                const endX = player.x + Math.cos(spreadAngle) * closestDistance;
-                const endY = player.y + Math.sin(spreadAngle) * closestDistance;
+                const endX = player.x + Math.cos(spreadAngle) * Math.sqrt(closestDistance);
+                const endY = player.y + Math.sin(spreadAngle) * Math.sqrt(closestDistance);
                 
                 // Создаем луч
                 activeLasers.push({
@@ -2018,10 +2563,10 @@ function updateChainLightning(weapon, deltaTime) {
         let minDistance = Infinity;
         
         for (const enemy of enemies) {
-            const distance = Math.sqrt(
-                Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
-            );
-            if (distance < minDistance && distance < 300) {
+            const dx = player.x - enemy.x;
+            const dy = player.y - enemy.y;
+            const distance = dx * dx + dy * dy;
+            if (distance < minDistance && distance < 90000) { // 300^2
                 minDistance = distance;
                 target = enemy;
             }
@@ -2040,10 +2585,10 @@ function updateChainLightning(weapon, deltaTime) {
                 
                 for (const enemy of enemies) {
                     if (hitEnemies.includes(enemy)) continue;
-                    const distance = Math.sqrt(
-                        Math.pow(currentTarget.x - enemy.x, 2) + Math.pow(currentTarget.y - enemy.y, 2)
-                    );
-                    if (distance < minDist && distance < 150) {
+                    const dx = currentTarget.x - enemy.x;
+                    const dy = currentTarget.y - enemy.y;
+                    const distance = dx * dx + dy * dy;
+                    if (distance < minDist && distance < 22500) { // 150^2
                         minDist = distance;
                         nextTarget = enemy;
                     }
@@ -2091,14 +2636,15 @@ function updateDamageWaves(weapon, deltaTime) {
     const waveCooldown = Math.max(2500 - weapon.level * 200, 1500);
     
     if (now - (damageWaves.lastWave || 0) > waveCooldown) {
-        damageWaves.push({
+        const waveObj = {
             radius: 0,
             maxRadius: 150 + weapon.level * 20,
             damage: roundNumber(player.damage * 0.5 * weapon.level),
             speed: 3 + weapon.level * 0.5,
             x: player.x,
             y: player.y
-        });
+        };
+        damageWaves.push(waveObj);
         damageWaves.lastWave = now;
     }
     
@@ -2111,9 +2657,9 @@ function updateDamageWaves(weapon, deltaTime) {
             // Проверка столкновения с врагами
             for (let j = enemies.length - 1; j >= 0; j--) {
                 const enemy = enemies[j];
-                const distance = Math.sqrt(
-                    Math.pow(wave.x - enemy.x, 2) + Math.pow(wave.y - enemy.y, 2)
-                );
+                const dx = wave.x - enemy.x;
+                const dy = wave.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
                 
                 if (Math.abs(distance - wave.radius) < 20) {
                     enemy.health -= wave.damage;
@@ -2127,9 +2673,9 @@ function updateDamageWaves(weapon, deltaTime) {
             
             // Проверка столкновения с боссом
             if (bossActive && boss) {
-                const distance = Math.sqrt(
-                    Math.pow(wave.x - boss.x, 2) + Math.pow(wave.y - boss.y, 2)
-                );
+                const dx = wave.x - boss.x;
+                const dy = wave.y - boss.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
                 
                 if (Math.abs(distance - wave.radius) < 30) {
                     if (boss.shieldActive && boss.shield > 0) {
@@ -2188,18 +2734,20 @@ function updateMeteors(weapon, deltaTime) {
                 meteor.y += moveStepY;
                 
                 // Урон по пути движения (проверяем всех врагов между старой и новой позицией)
-                const pathLength = Math.sqrt(Math.pow(meteor.x - oldX, 2) + Math.pow(meteor.y - oldY, 2));
+                const pathDx = meteor.x - oldX;
+                const pathDy = meteor.y - oldY;
+                const pathLength = Math.sqrt(pathDx * pathDx + pathDy * pathDy);
                 if (pathLength > 0) {
                     for (let j = enemies.length - 1; j >= 0; j--) {
                         const enemy = enemies[j];
                         // Проверяем расстояние от врага до линии движения метеорита
                         const distToLine = Math.abs(
-                            (meteor.y - oldY) * enemy.x - (meteor.x - oldX) * enemy.y + 
+                            pathDy * enemy.x - pathDx * enemy.y + 
                             meteor.x * oldY - meteor.y * oldX
                         ) / pathLength;
                         
                         // Проверяем, находится ли враг на пути
-                        const projX = ((enemy.x - oldX) * (meteor.x - oldX) + (enemy.y - oldY) * (meteor.y - oldY)) / (pathLength * pathLength);
+                        const projX = ((enemy.x - oldX) * pathDx + (enemy.y - oldY) * pathDy) / (pathLength * pathLength);
                         const onPath = projX >= 0 && projX <= 1;
                         
                         if (distToLine < enemy.radius + meteor.radius && onPath && (!meteor.hitEnemies || !meteor.hitEnemies.includes(j))) {
@@ -2218,11 +2766,11 @@ function updateMeteors(weapon, deltaTime) {
                     // Урон по пути для босса
                     if (bossActive && boss && (!meteor.hitBoss || !meteor.hitBoss)) {
                         const distToLine = Math.abs(
-                            (meteor.y - oldY) * boss.x - (meteor.x - oldX) * boss.y + 
+                            pathDy * boss.x - pathDx * boss.y + 
                             meteor.x * oldY - meteor.y * oldX
                         ) / pathLength;
                         
-                        const projX = ((boss.x - oldX) * (meteor.x - oldX) + (boss.y - oldY) * (meteor.y - oldY)) / (pathLength * pathLength);
+                        const projX = ((boss.x - oldX) * pathDx + (boss.y - oldY) * pathDy) / (pathLength * pathLength);
                         const onPath = projX >= 0 && projX <= 1;
                         
                         if (distToLine < boss.radius + meteor.radius && onPath) {
@@ -2241,9 +2789,9 @@ function updateMeteors(weapon, deltaTime) {
                 // Взрыв метеорита
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const enemy = enemies[j];
-                    const dist = Math.sqrt(
-                        Math.pow(meteor.x - enemy.x, 2) + Math.pow(meteor.y - enemy.y, 2)
-                    );
+                    const dx = meteor.x - enemy.x;
+                    const dy = meteor.y - enemy.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
                     
                     if (dist < meteor.explosionRadius) {
                         enemy.health -= meteor.damage;
@@ -2257,9 +2805,9 @@ function updateMeteors(weapon, deltaTime) {
                 
                 // Взрыв по боссу
                 if (bossActive && boss) {
-                    const dist = Math.sqrt(
-                        Math.pow(meteor.x - boss.x, 2) + Math.pow(meteor.y - boss.y, 2)
-                    );
+                    const dx = meteor.x - boss.x;
+                    const dy = meteor.y - boss.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
                     
                     if (dist < meteor.explosionRadius) {
                         if (boss.shieldActive && boss.shield > 0) {
@@ -2307,11 +2855,12 @@ function updateFireBalls(weapon, deltaTime) {
         // Проверка столкновения с врагами
         for (let i = enemies.length - 1; i >= 0; i--) {
             const enemy = enemies[i];
-            const distance = Math.sqrt(
-                Math.pow(ballX - enemy.x, 2) + Math.pow(ballY - enemy.y, 2)
-            );
+            const dx = ballX - enemy.x;
+            const dy = ballY - enemy.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const radiusSum = ball.radius + enemy.radius;
             
-            if (distance < ball.radius + enemy.radius) {
+            if (distanceSquared < radiusSum * radiusSum) {
                 const damage = roundNumber(player.damage * 0.3 * weapon.level);
                 enemy.health -= damage;
                 createParticles(enemy.x, enemy.y, 5, '#ff3300');
@@ -2326,11 +2875,12 @@ function updateFireBalls(weapon, deltaTime) {
         
         // Проверка столкновения с боссом
         if (bossActive && boss) {
-            const distance = Math.sqrt(
-                Math.pow(ballX - boss.x, 2) + Math.pow(ballY - boss.y, 2)
-            );
+            const dx = ballX - boss.x;
+            const dy = ballY - boss.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const radiusSum = ball.radius + boss.radius;
             
-            if (distance < ball.radius + boss.radius) {
+            if (distanceSquared < radiusSum * radiusSum) {
                 const damage = roundNumber(player.damage * 0.15 * weapon.level);
                 if (boss.shieldActive && boss.shield > 0) {
                     boss.shield -= damage;
@@ -2346,98 +2896,218 @@ function updateFireBalls(weapon, deltaTime) {
 // Обновление ледяных шипов
 function updateIceSpikes(weapon, deltaTime) {
     const now = Date.now();
-    const spikeCooldown = Math.max(2000 - weapon.level * 150, 1000);
-    
-    const spikeDuration = 400; // Длительность видимости шипов в мс
+    const spikeCooldown = Math.max(1500 - weapon.level * 100, 800);
     
     // Удаляем старые шипы
     if (!iceSpikes.activeSpikes) iceSpikes.activeSpikes = [];
-    iceSpikes.activeSpikes = iceSpikes.activeSpikes.filter(spike => now - spike.startTime < spikeDuration);
+    if (!iceSpikes.secondarySpikes) iceSpikes.secondarySpikes = [];
     
+    iceSpikes.activeSpikes = iceSpikes.activeSpikes.filter(spike => now - spike.startTime < 5000);
+    iceSpikes.secondarySpikes = iceSpikes.secondarySpikes.filter(spike => now - spike.startTime < 3000);
+    
+    // Создаем основной шип как снаряд
     if (now - iceSpikes.lastSpike > spikeCooldown) {
-        // Определяем направление движения игрока
-        let moveAngle = Math.atan2(player.mouseY - player.y, player.mouseX - player.x);
-        if (player.isMoving.up || player.isMoving.down || player.isMoving.left || player.isMoving.right) {
-            if (player.isMoving.up && player.isMoving.left) moveAngle = -Math.PI * 3/4;
-            else if (player.isMoving.up && player.isMoving.right) moveAngle = -Math.PI/4;
-            else if (player.isMoving.down && player.isMoving.left) moveAngle = Math.PI * 3/4;
-            else if (player.isMoving.down && player.isMoving.right) moveAngle = Math.PI/4;
-            else if (player.isMoving.up) moveAngle = -Math.PI/2;
-            else if (player.isMoving.down) moveAngle = Math.PI/2;
-            else if (player.isMoving.left) moveAngle = Math.PI;
-            else if (player.isMoving.right) moveAngle = 0;
-        }
-        
-        const spikeCount = Math.min(3 + weapon.level, 8);
-        const spikeLength = 80 + weapon.level * 10;
-        const spikeWidth = 15 + weapon.level * 3;
-        
-        for (let i = 0; i < spikeCount; i++) {
-            const angle = moveAngle + (i - (spikeCount - 1) / 2) * 0.3;
-            const startX = player.x + Math.cos(angle) * 30;
-            const startY = player.y + Math.sin(angle) * 30;
-            const endX = startX + Math.cos(angle) * spikeLength;
-            const endY = startY + Math.sin(angle) * spikeLength;
+        // Находим ближайшего врага для направления
+        let targetAngle = Math.random() * Math.PI * 2;
+        if (enemies.length > 0) {
+            let closestEnemy = null;
+            let closestDistance = Infinity;
             
-            // Сохраняем шип для визуализации
-            iceSpikes.activeSpikes.push({
-                startX: startX,
-                startY: startY,
-                endX: endX,
-                endY: endY,
-                width: spikeWidth,
-                startTime: now
-            });
-            
-            // Проверка столкновения с врагами
-            for (let j = enemies.length - 1; j >= 0; j--) {
-                const enemy = enemies[j];
-                const distToLine = Math.abs(
-                    (endY - startY) * enemy.x - (endX - startX) * enemy.y + endX * startY - endY * startX
-                ) / Math.sqrt(Math.pow(endY - startY, 2) + Math.pow(endX - startX, 2));
-                
-                const distAlongLine = Math.sqrt(
-                    Math.pow(enemy.x - startX, 2) + Math.pow(enemy.y - startY, 2)
-                );
-                
-                if (distToLine < spikeWidth && distAlongLine < spikeLength + 20) {
-                    const damage = roundNumber(player.damage * 0.8 * weapon.level);
-                    enemy.health -= damage;
-                    createParticles(enemy.x, enemy.y, 5, '#00ccff');
-                    
-                    if (enemy.health <= 0) {
-                        handleEnemyDeath(enemy, j);
-                    } else {
-                        if (soundEnabled) playHitSound();
-                    }
+            for (const enemy of enemies) {
+                const dx = enemy.x - player.x;
+                const dy = enemy.y - player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestEnemy = enemy;
                 }
             }
             
-            // Проверка столкновения с боссом
-            if (bossActive && boss) {
-                const distToLine = Math.abs(
-                    (endY - startY) * boss.x - (endX - startX) * boss.y + endX * startY - endY * startX
-                ) / Math.sqrt(Math.pow(endY - startY, 2) + Math.pow(endX - startX, 2));
-                
-                const distAlongLine = Math.sqrt(
-                    Math.pow(boss.x - startX, 2) + Math.pow(boss.y - startY, 2)
-                );
-                
-                if (distToLine < spikeWidth && distAlongLine < spikeLength + 30) {
-                    const damage = roundNumber(player.damage * 0.4 * weapon.level);
-                    if (boss.shieldActive && boss.shield > 0) {
-                        boss.shield -= damage;
-                    } else {
-                        boss.health -= damage;
-                    }
-                    createParticles(boss.x, boss.y, 5, '#00ccff');
-                }
+            if (closestEnemy) {
+                targetAngle = Math.atan2(closestEnemy.y - player.y, closestEnemy.x - player.x);
             }
         }
+        
+        const spikeSpeed = 6 + weapon.level * 0.5;
+        const spikeLength = 20 + weapon.level * 3;
+        const spikeWidth = 6 + weapon.level;
+        
+        iceSpikes.activeSpikes.push({
+            x: player.x,
+            y: player.y,
+            vx: Math.cos(targetAngle) * spikeSpeed,
+            vy: Math.sin(targetAngle) * spikeSpeed,
+            angle: targetAngle,
+            length: spikeLength,
+            width: spikeWidth,
+            damage: roundNumber(player.damage * 0.8 * weapon.level),
+            startTime: now,
+            lastSmallSpikeSpawn: now,
+            type: 'main',
+            level: weapon.level
+        });
         
         iceSpikes.lastSpike = now;
-        createParticles(player.x, player.y, 10, '#00ccff');
+        createParticles(player.x, player.y, 8, '#00ccff');
     }
+    
+    // Обновляем позицию основных шипов и спавним маленькие шипики
+    for (let i = iceSpikes.activeSpikes.length - 1; i >= 0; i--) {
+        const spike = iceSpikes.activeSpikes[i];
+        
+        // Движение шипа
+        spike.x += spike.vx;
+        spike.y += spike.vy;
+        
+        // Спавним маленькие шипики каждые 1 секунду (100% гарантия)
+        if (now - spike.lastSmallSpikeSpawn >= 1000) {
+            const smallSpikeCount = 4 + Math.floor(spike.level / 3); // 4 стартовых, растет с уровнем
+            
+            for (let j = 0; j < smallSpikeCount; j++) {
+                const angle = (Math.PI * 2 / smallSpikeCount) * j;
+                const smallSpeed = 2 + spike.level * 0.2;
+                
+                iceSpikes.secondarySpikes.push({
+                    x: spike.x,
+                    y: spike.y,
+                    vx: Math.cos(angle) * smallSpeed,
+                    vy: Math.sin(angle) * smallSpeed,
+                    length: 8 + spike.level,
+                    width: 3,
+                    damage: roundNumber(spike.damage * 0.2),
+                    startTime: now,
+                    type: 'small'
+                });
+            }
+            
+            spike.lastSmallSpikeSpawn = now;
+            createParticles(spike.x, spike.y, 4, '#99ccff');
+        }
+        
+        // Проверка столкновений с врагами
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            const dx = enemy.x - spike.x;
+            const dy = enemy.y - spike.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < enemy.radius + spike.width / 2) {
+                enemy.health -= spike.damage;
+                createParticles(enemy.x, enemy.y, 6, '#00ccff');
+                
+                // Замораживаем врага
+                enemy.frozen = true;
+                enemy.freezeEndTime = now + 2000;
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, j);
+                } else {
+                    if (soundEnabled) playHitSound();
+                }
+                
+                iceSpikes.activeSpikes.splice(i, 1);
+                break;
+            }
+        }
+        
+        // Проверка столкновений с боссом
+        if (bossActive && boss) {
+            const dx = boss.x - spike.x;
+            const dy = boss.y - spike.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < boss.radius + spike.width / 2) {
+                const damage = spike.damage * 0.5;
+                if (boss.shieldActive && boss.shield > 0) {
+                    boss.shield -= damage;
+                } else {
+                    boss.health -= damage;
+                }
+                createParticles(boss.x, boss.y, 6, '#00ccff');
+                iceSpikes.activeSpikes.splice(i, 1);
+            }
+        }
+        
+        // Удаляем шип если вышел за границы
+        if (spike.x < -50 || spike.x > canvas.width + 50 || 
+            spike.y < -50 || spike.y > canvas.height + 50) {
+            iceSpikes.activeSpikes.splice(i, 1);
+        }
+    }
+    
+    // Обновляем маленькие шипики
+    for (let i = iceSpikes.secondarySpikes.length - 1; i >= 0; i--) {
+        const spike = iceSpikes.secondarySpikes[i];
+        
+        // Движение
+        spike.x += spike.vx;
+        spike.y += spike.vy;
+        
+        // Проверка столкновений с врагами
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            const dx = enemy.x - spike.x;
+            const dy = enemy.y - spike.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < enemy.radius + spike.width / 2) {
+                if (spike.damage > 0) {
+                    enemy.health -= spike.damage;
+                    createParticles(enemy.x, enemy.y, 3, '#99ccff');
+                }
+                
+                // Замедляем врага
+                enemy.slowed = true;
+                enemy.slowEndTime = now + 1500;
+                enemy.slowFactor = 0.6;
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, j);
+                }
+                
+                iceSpikes.secondarySpikes.splice(i, 1);
+                break;
+            }
+        }
+        
+        // Удаляем если вышел за границы
+        if (spike.x < -20 || spike.x > canvas.width + 20 || 
+            spike.y < -20 || spike.y > canvas.height + 20) {
+            iceSpikes.secondarySpikes.splice(i, 1);
+        }
+    }
+}
+
+// Вспомогательная функция для расчета расстояния от точки до линии
+function pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+    
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    
+    if (lenSq !== 0) param = dot / lenSq;
+    
+    let xx, yy;
+    
+    if (param < 0) {
+        xx = x1;
+        yy = y1;
+    } else if (param > 1) {
+        xx = x2;
+        yy = y2;
+    } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+    }
+    
+    const dx = px - xx;
+    const dy = py - yy;
+    
+    return Math.sqrt(dx * dx + dy * dy);
 }
 
 // Обновление снарядов с наведением
@@ -2453,10 +3123,10 @@ function updateHomingMissiles(weapon, deltaTime) {
             let minDistance = Infinity;
             
             for (const enemy of enemies) {
-                const distance = Math.sqrt(
-                    Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
-                );
-                if (distance < minDistance && distance < 500) {
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const distance = dx * dx + dy * dy;
+                if (distance < minDistance && distance < 250000) { // 500^2
                     minDistance = distance;
                     target = enemy;
                 }
@@ -2489,9 +3159,9 @@ function updateHomingMissiles(weapon, deltaTime) {
                 let minDist = Infinity;
                 
                 for (const enemy of enemies) {
-                    const distance = Math.sqrt(
-                        Math.pow(missile.x - enemy.x, 2) + Math.pow(missile.y - enemy.y, 2)
-                    );
+                    const dx = missile.x - enemy.x;
+                    const dy = missile.y - enemy.y;
+                    const distance = dx * dx + dy * dy;
                     if (distance < minDist) {
                         minDist = distance;
                         newTarget = enemy;
@@ -2521,11 +3191,12 @@ function updateHomingMissiles(weapon, deltaTime) {
             missile.y += Math.sin(missile.angle) * missile.speed * (deltaTime / 16.67);
             
             // Проверка столкновения с целью
-            const distance = Math.sqrt(
-                Math.pow(missile.x - missile.target.x, 2) + Math.pow(missile.y - missile.target.y, 2)
-            );
+            const dx = missile.x - missile.target.x;
+            const dy = missile.y - missile.target.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const radiusSum = missile.radius + missile.target.radius;
             
-            if (distance < missile.radius + missile.target.radius) {
+            if (distanceSquared < radiusSum * radiusSum) {
                 missile.target.health -= missile.damage;
                 createParticles(missile.target.x, missile.target.y, 10, '#ff9900');
                 
@@ -2577,41 +3248,930 @@ function updateBulletRing(weapon, deltaTime) {
     }
 }
 
-// Вспомогательная функция для обработки смерти врага
-function handleEnemyDeath(enemy, index) {
-    // Очки для рекорда
-    let recordPoints = 10 + wave * 1.5;
-    if (enemy.type === 'fast') recordPoints *= 1.3;
-    if (enemy.type === 'tank') recordPoints *= 1.8;
-    if (enemy.type === 'shooter') recordPoints *= 2;
-    score += roundNumber(recordPoints);
+// НОВЫЕ ФУНКЦИИ ДЛЯ ОРУЖИЙ
+
+// Обновление магнитных мин
+function updateMagneticMines(weapon, deltaTime) {
+    const now = Date.now();
+    const mineCooldown = Math.max(3000 - weapon.level * 200, 1500);
     
-    // Валюта для улучшений
-    let moneyReward = 2 + wave * 0.3;
-    if (enemy.type === 'fast') moneyReward *= 1.2;
-    if (enemy.type === 'tank') moneyReward *= 1.5;
-    if (enemy.type === 'shooter') moneyReward *= 1.8;
-    money += roundNumber(moneyReward);
-    
-    updateMoney();
-    updateScore();
-    
-    // Получение опыта
-    const expGain = 10 * (1 + upgradeSystem.experienceGain.level * 0.2);
-    player.experience += expGain;
-    updateExperienceBar();
-    checkLevelUp();
-    
-    createParticles(enemy.x, enemy.y, 10, '#ff9900');
-    
-    // Шанс выпадения ядра здоровья (30%)
-    if (Math.random() < 0.3) {
-        createHealthCore(enemy.x, enemy.y);
+    // Создаем новые мины
+    if (now - (magneticMines.lastMine || 0) > mineCooldown) {
+        const mineCount = Math.min(1 + Math.floor(weapon.level / 2), 3);
+        for (let i = 0; i < mineCount; i++) {
+            magneticMines.push({
+                x: player.x + (Math.random() - 0.5) * 100,
+                y: player.y + (Math.random() - 0.5) * 100,
+                radius: 15 + weapon.level * 2,
+                pullForce: 0.5 + weapon.level * 0.1,
+                damage: roundNumber(player.damage * 0.3 * weapon.level),
+                life: 180,
+                maxLife: 180,
+                explosionRadius: 60 + weapon.level * 10
+            });
+        }
+        magneticMines.lastMine = now;
     }
     
-    enemies.splice(index, 1);
+    // Обновляем существующие мины
+    for (let i = magneticMines.length - 1; i >= 0; i--) {
+        const mine = magneticMines[i];
+        mine.life--;
+        
+        // Притягиваем врагов к мине
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            const dx = mine.x - enemy.x;
+            const dy = mine.y - enemy.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < 200) { // Радиус притяжения
+                const force = mine.pullForce * (1 - distance / 200);
+                enemy.x += (dx / distance) * force * (deltaTime / 16.67);
+                enemy.y += (dy / distance) * force * (deltaTime / 16.67);
+            }
+            
+            // Проверка столкновения с врагами
+            if (distance < mine.radius + enemy.radius) {
+                enemy.health -= mine.damage * (deltaTime / 16.67);
+                createParticles(enemy.x, enemy.y, 2, '#ff00ff');
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, j);
+                }
+            }
+        }
+        
+        // Взрыв при окончании времени жизни
+        if (mine.life <= 0) {
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                const enemy = enemies[j];
+                const dx = mine.x - enemy.x;
+                const dy = mine.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < mine.explosionRadius) {
+                    const explosionDamage = roundNumber(mine.damage * 2);
+                    enemy.health -= explosionDamage;
+                    createParticles(enemy.x, enemy.y, 10, '#ff00ff');
+                    
+                    if (enemy.health <= 0) {
+                        handleEnemyDeath(enemy, j);
+                    }
+                }
+            }
+            
+            // Взрыв по боссу
+            if (bossActive && boss) {
+                const dx = mine.x - boss.x;
+                const dy = mine.y - boss.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < mine.explosionRadius) {
+                    const explosionDamage = roundNumber(mine.damage * 1.5);
+                    if (boss.shieldActive && boss.shield > 0) {
+                        boss.shield -= explosionDamage;
+                    } else {
+                        boss.health -= explosionDamage;
+                    }
+                    createParticles(boss.x, boss.y, 15, '#ff00ff');
+                }
+            }
+            
+            createParticles(mine.x, mine.y, 25, '#ff00ff');
+            magneticMines.splice(i, 1);
+        }
+    }
+}
+
+// Обновление световых клинков
+function updateLightSabers(weapon, deltaTime) {
+    for (const saber of lightSabers) {
+        saber.angle += saber.rotationSpeed * (deltaTime / 16.67);
+        if (saber.angle > Math.PI * 2) saber.angle -= Math.PI * 2;
+        
+        const startX = player.x + Math.cos(saber.angle) * saber.distance;
+        const startY = player.y + Math.sin(saber.angle) * saber.distance;
+        const endX = startX + Math.cos(saber.angle) * saber.length;
+        const endY = startY + Math.sin(saber.angle) * saber.length;
+        
+        // Проверка столкновения с врагами
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const enemy = enemies[i];
+            const pathDx = endX - startX;
+            const pathDy = endY - startY;
+            const pathLength = Math.sqrt(pathDx * pathDx + pathDy * pathDy);
+            const distToLine = Math.abs(
+                pathDy * enemy.x - pathDx * enemy.y + endX * startY - endY * startX
+            ) / pathLength;
+            
+            const dx = enemy.x - startX;
+            const dy = enemy.y - startY;
+            const distAlongLine = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distToLine < 10 && distAlongLine < pathLength + 20) {
+                enemy.health -= saber.damage;
+                createParticles(enemy.x, enemy.y, 5, '#00ffff');
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, i);
+                }
+            }
+        }
+        
+        // Проверка столкновения с боссом
+        if (bossActive && boss) {
+            const pathDx = endX - startX;
+            const pathDy = endY - startY;
+            const pathLength = Math.sqrt(pathDx * pathDx + pathDy * pathDy);
+            const distToLine = Math.abs(
+                pathDy * boss.x - pathDx * boss.y + endX * startY - endY * startX
+            ) / pathLength;
+            
+            const dx = boss.x - startX;
+            const dy = boss.y - startY;
+            const distAlongLine = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distToLine < 15 && distAlongLine < pathLength + 30) {
+                if (boss.shieldActive && boss.shield > 0) {
+                    boss.shield -= saber.damage * 0.5;
+                } else {
+                    boss.health -= saber.damage * 0.5;
+                }
+                createParticles(boss.x, boss.y, 5, '#00ffff');
+            }
+        }
+    }
+}
+
+// Обновление токсичных облаков
+function updateToxicClouds(weapon, deltaTime) {
+    const now = Date.now();
+    const cloudCooldown = Math.max(4000 - weapon.level * 250, 2000);
     
-    if (soundEnabled) playEnemyDestroySound();
+    // Создаем новые облака
+    if (now - (toxicClouds.lastCloud || 0) > cloudCooldown) {
+        const cloudCount = Math.min(1 + Math.floor(weapon.level / 3), 2);
+        for (let i = 0; i < cloudCount; i++) {
+            toxicClouds.push({
+                x: player.x + (Math.random() - 0.5) * 150,
+                y: player.y + (Math.random() - 0.5) * 150,
+                radius: 50 + weapon.level * 10,
+                damage: roundNumber(player.damage * 0.1 * weapon.level),
+                life: 300,
+                maxLife: 300,
+                slowEffect: 0.5 + weapon.level * 0.05
+            });
+        }
+        toxicClouds.lastCloud = now;
+    }
+    
+    // Обновляем существующие облака
+    for (let i = toxicClouds.length - 1; i >= 0; i--) {
+        const cloud = toxicClouds[i];
+        cloud.life--;
+        
+        // Постепенно уменьшаем радиус
+        cloud.radius *= 0.999;
+        
+        // Проверка столкновения с врагами
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            const dx = cloud.x - enemy.x;
+            const dy = cloud.y - enemy.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < cloud.radius) {
+                // Урон от отравления
+                enemy.health -= cloud.damage * (deltaTime / 16.67);
+                createParticles(enemy.x, enemy.y, 1, '#33ff33');
+                
+                // Замедление
+                enemy.speed = enemy.speed * (1 - cloud.slowEffect * 0.5);
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, j);
+                }
+            }
+        }
+        
+        // Проверка столкновения с боссом
+        if (bossActive && boss) {
+            const dx = cloud.x - boss.x;
+            const dy = cloud.y - boss.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < cloud.radius) {
+                if (boss.shieldActive && boss.shield > 0) {
+                    boss.shield -= cloud.damage * 0.3;
+                } else {
+                    boss.health -= cloud.damage * 0.3;
+                }
+                // Босс тоже замедляется
+                boss.speed = boss.speed * (1 - cloud.slowEffect * 0.3);
+                createParticles(boss.x, boss.y, 3, '#33ff33');
+            }
+        }
+        
+        // Удаляем облако после окончания времени жизни
+        if (cloud.life <= 0) {
+            toxicClouds.splice(i, 1);
+        }
+    }
+}
+
+// Обновление снайперских лазеров
+function updateSniperLasers(weapon, deltaTime) {
+    const now = Date.now();
+    
+    if (now - sniperLasers.lastShot > sniperLasers.cooldown && enemies.length > 0) {
+        // Находим самого сильного врага (с максимальным здоровьем)
+        let strongestEnemy = null;
+        let maxHealth = 0;
+        
+        for (const enemy of enemies) {
+            if (enemy.health > maxHealth) {
+                maxHealth = enemy.health;
+                strongestEnemy = enemy;
+            }
+        }
+        
+        if (strongestEnemy) {
+            sniperLasers.activeTarget = strongestEnemy;
+            sniperLasers.lastShot = now;
+            
+            // Заряжаем лазер (задержка перед выстрелом)
+            setTimeout(() => {
+                if (sniperLasers.activeTarget && enemies.includes(sniperLasers.activeTarget)) {
+                    const damage = roundNumber(player.damage * 2.5 * weapon.level);
+                    sniperLasers.activeTarget.health -= damage;
+                    createParticles(sniperLasers.activeTarget.x, sniperLasers.activeTarget.y, 15, '#ff0000');
+                    
+                    // Пронзающий эффект - наносим урон врагам за целью
+                    const angle = Math.atan2(
+                        sniperLasers.activeTarget.y - player.y,
+                        sniperLasers.activeTarget.x - player.x
+                    );
+                    const range = 800;
+                    
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        const enemy = enemies[i];
+                        if (enemy === sniperLasers.activeTarget) continue;
+                        
+                        const pathDx = Math.cos(angle) * range;
+                        const pathDy = Math.sin(angle) * range;
+                        const pathLength = Math.sqrt(pathDx * pathDx + pathDy * pathDy);
+                        const distToLine = Math.abs(
+                            pathDy * enemy.x - pathDx * enemy.y + 
+                            (player.x + pathDx) * player.y - (player.y + pathDy) * player.x
+                        ) / pathLength;
+                        
+                        const dx = enemy.x - player.x;
+                        const dy = enemy.y - player.y;
+                        const dotProduct = dx * Math.cos(angle) + dy * Math.sin(angle);
+                        
+                        if (distToLine < 20 && dotProduct > 0 && dotProduct < range) {
+                            const chainDamage = roundNumber(damage * 0.5);
+                            enemy.health -= chainDamage;
+                            createParticles(enemy.x, enemy.y, 8, '#ff0000');
+                            
+                            if (enemy.health <= 0) {
+                                handleEnemyDeath(enemy, i);
+                            }
+                        }
+                    }
+                    
+                    if (sniperLasers.activeTarget.health <= 0) {
+                        const index = enemies.indexOf(sniperLasers.activeTarget);
+                        if (index !== -1) handleEnemyDeath(sniperLasers.activeTarget, index);
+                    }
+                    
+                    // Урон по боссу, если он на линии
+                    if (bossActive && boss) {
+                        const pathDx = Math.cos(angle) * range;
+                        const pathDy = Math.sin(angle) * range;
+                        const pathLength = Math.sqrt(pathDx * pathDx + pathDy * pathDy);
+                        const distToLine = Math.abs(
+                            pathDy * boss.x - pathDx * boss.y + 
+                            (player.x + pathDx) * player.y - (player.y + pathDy) * player.x
+                        ) / pathLength;
+                        
+                        const dx = boss.x - player.x;
+                        const dy = boss.y - player.y;
+                        const dotProduct = dx * Math.cos(angle) + dy * Math.sin(angle);
+                        
+                        if (distToLine < 30 && dotProduct > 0 && dotProduct < range) {
+                            const bossDamage = roundNumber(damage * 0.7);
+                            if (boss.shieldActive && boss.shield > 0) {
+                                boss.shield -= bossDamage;
+                            } else {
+                                boss.health -= bossDamage;
+                            }
+                            createParticles(boss.x, boss.y, 10, '#ff0000');
+                        }
+                    }
+                    
+                    sniperLasers.activeTarget = null;
+                }
+            }, 500); // Задержка заряда 500мс
+        }
+    }
+}
+
+// Обновление Вуали звёзд
+function updateVeilOfStars(weapon, deltaTime) {
+    const now = Date.now();
+    
+    // Проверяем и активируем неуязвимость каждые 10 секунд на уровне 10+
+    if (weapon.level >= 10 && now - veilOfStars.lastInvulnerability >= veilOfStars.cooldown) {
+        veilOfStars.lastInvulnerability = now;
+        veilOfStars.active = true;
+        veilOfStars.endTime = now + 2000; // 2 секунды неуязвимости
+        
+        // Показываем уведомление
+        showNotification('shield', '✨ Вуаль звёзд: Неуязвимость на 2 секунды!');
+        createParticles(player.x, player.y, 15, '#ffff00', 'shield');
+    }
+    
+    // Проверяем окончание неуязвимости
+    if (veilOfStars.active && now > veilOfStars.endTime) {
+        veilOfStars.active = false;
+    }
+}
+
+// Обновление электрических ловушек
+function updateElectricTraps(weapon, deltaTime) {
+    const now = Date.now();
+    const trapCooldown = Math.max(3500 - weapon.level * 250, 1500);
+    
+    // Создаем новые ловушки
+    if (now - (electricTraps.lastTrap || 0) > trapCooldown) {
+        const trapCount = Math.min(1 + Math.floor(weapon.level / 2), 3);
+        for (let i = 0; i < trapCount; i++) {
+            electricTraps.push({
+                x: player.x + (Math.random() - 0.5) * 200,
+                y: player.y + (Math.random() - 0.5) * 200,
+                radius: 20 + weapon.level * 3,
+                damage: roundNumber(player.damage * 0.8 * weapon.level),
+                life: 240,
+                maxLife: 240,
+                triggered: false,
+                chainDistance: 100 + weapon.level * 10
+            });
+        }
+        electricTraps.lastTrap = now;
+    }
+    
+    // Обновляем существующие ловушки
+    for (let i = electricTraps.length - 1; i >= 0; i--) {
+        const trap = electricTraps[i];
+        trap.life--;
+        
+        if (!trap.triggered) {
+            // Проверяем, активирована ли ловушка врагом
+            for (let j = 0; j < enemies.length; j++) {
+                const enemy = enemies[j];
+                const dx = trap.x - enemy.x;
+                const dy = trap.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < trap.radius + enemy.radius) {
+                    trap.triggered = true;
+                    
+                    // Цепная молния по всем врагам в радиусе
+                    const hitEnemies = [enemy];
+                    
+                    for (let k = 0; k < enemies.length; k++) {
+                        if (k === j) continue;
+                        
+                        const otherEnemy = enemies[k];
+                        const dx2 = enemy.x - otherEnemy.x;
+                        const dy2 = enemy.y - otherEnemy.y;
+                        const distance2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                        
+                        if (distance2 < trap.chainDistance) {
+                            hitEnemies.push(otherEnemy);
+                        }
+                    }
+                    
+                    // Наносим урон всем целям
+                    for (let k = 0; k < hitEnemies.length; k++) {
+                        const hitEnemy = hitEnemies[k];
+                        const chainDamage = roundNumber(trap.damage * (1 - k * 0.2));
+                        hitEnemy.health -= chainDamage;
+                        createParticles(hitEnemy.x, hitEnemy.y, 8, '#ffff00');
+                        
+                        if (hitEnemy.health <= 0) {
+                            const index = enemies.indexOf(hitEnemy);
+                            if (index !== -1) handleEnemyDeath(hitEnemy, index);
+                        }
+                    }
+                    
+                    // Урон по боссу, если он в радиусе
+                    if (bossActive && boss) {
+                        const dx3 = trap.x - boss.x;
+                        const dy3 = trap.y - boss.y;
+                        const distance3 = Math.sqrt(dx3 * dx3 + dy3 * dy3);
+                        
+                        if (distance3 < trap.radius + boss.radius) {
+                            if (boss.shieldActive && boss.shield > 0) {
+                                boss.shield -= trap.damage * 0.6;
+                            } else {
+                                boss.health -= trap.damage * 0.6;
+                            }
+                            createParticles(boss.x, boss.y, 10, '#ffff00');
+                        }
+                    }
+                    
+                    break;
+                }
+            }
+        }
+        
+        // Удаляем ловушку после срабатывания или окончания времени жизни
+        if (trap.triggered || trap.life <= 0) {
+            electricTraps.splice(i, 1);
+        }
+    }
+}
+
+// Обновление вихревых торнадо
+function updateVortexTornadoes(weapon, deltaTime) {
+    const now = Date.now();
+    const tornadoCooldown = Math.max(4000 - weapon.level * 250, 2000);
+    
+    // Создаем новые торнадо
+    if (now - (vortexTornadoes.lastTornado || 0) > tornadoCooldown) {
+        const tornadoCount = Math.min(1 + Math.floor(weapon.level / 3), 2);
+        for (let i = 0; i < tornadoCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            vortexTornadoes.push({
+                x: player.x,
+                y: player.y,
+                angle: angle,
+                speed: 3 + weapon.level * 0.3,
+                pushForce: 2 + weapon.level * 0.2,
+                damage: roundNumber(player.damage * 0.2 * weapon.level),
+                radius: 25 + weapon.level * 3,
+                life: 180,
+                maxLife: 180
+            });
+        }
+        vortexTornadoes.lastTornado = now;
+    }
+    
+    // Обновляем существующие торнадо
+    for (let i = vortexTornadoes.length - 1; i >= 0; i--) {
+        const tornado = vortexTornadoes[i];
+        tornado.life--;
+        
+        // Движение торнадо
+        tornado.x += Math.cos(tornado.angle) * tornado.speed * (deltaTime / 16.67);
+        tornado.y += Math.sin(tornado.angle) * tornado.speed * (deltaTime / 16.67);
+        
+        // Проверка границ
+        if (tornado.x < tornado.radius) {
+            tornado.x = tornado.radius;
+            tornado.angle = Math.PI - tornado.angle;
+        }
+        if (tornado.x > canvas.width - tornado.radius) {
+            tornado.x = canvas.width - tornado.radius;
+            tornado.angle = Math.PI - tornado.angle;
+        }
+        if (tornado.y < tornado.radius) {
+            tornado.y = tornado.radius;
+            tornado.angle = -tornado.angle;
+        }
+        if (tornado.y > canvas.height - tornado.radius) {
+            tornado.y = canvas.height - tornado.radius;
+            tornado.angle = -tornado.angle;
+        }
+        
+        // Проверка столкновения с врагами
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
+            const dx = tornado.x - enemy.x;
+            const dy = tornado.y - enemy.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < tornado.radius + enemy.radius) {
+                // Урон
+                enemy.health -= tornado.damage * (deltaTime / 16.67);
+                createParticles(enemy.x, enemy.y, 2, '#0099ff');
+                
+                // Отталкивание
+                const pushAngle = Math.atan2(enemy.y - tornado.y, enemy.x - tornado.x);
+                enemy.x += Math.cos(pushAngle) * tornado.pushForce * (deltaTime / 16.67);
+                enemy.y += Math.sin(pushAngle) * tornado.pushForce * (deltaTime / 16.67);
+                
+                if (enemy.health <= 0) {
+                    handleEnemyDeath(enemy, j);
+                }
+            }
+        }
+        
+        // Проверка столкновения с боссом
+        if (bossActive && boss) {
+            const dx = tornado.x - boss.x;
+            const dy = tornado.y - boss.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < tornado.radius + boss.radius) {
+                // Урон боссу
+                const bossDamage = roundNumber(tornado.damage * 0.5);
+                if (boss.shieldActive && boss.shield > 0) {
+                    boss.shield -= bossDamage;
+                } else {
+                    boss.health -= bossDamage;
+                }
+                
+                // Отталкивание босса
+                const pushAngle = Math.atan2(boss.y - tornado.y, boss.x - tornado.x);
+                boss.x += Math.cos(pushAngle) * tornado.pushForce * 0.5 * (deltaTime / 16.67);
+                boss.y += Math.sin(pushAngle) * tornado.pushForce * 0.5 * (deltaTime / 16.67);
+                
+                createParticles(boss.x, boss.y, 3, '#0099ff');
+            }
+        }
+        
+        // Удаляем торнадо после окончания времени жизни
+        if (tornado.life <= 0) {
+            vortexTornadoes.splice(i, 1);
+        }
+    }
+}
+
+// Обновление кристаллических шипов
+function updateCrystalSpikes(weapon, deltaTime) {
+    const now = Date.now();
+    
+    for (const spike of crystalSpikes) {
+        spike.angle += spike.rotationSpeed * (deltaTime / 16.67);
+        if (spike.angle > Math.PI * 2) spike.angle -= Math.PI * 2;
+        
+        const spikeX = player.x + Math.cos(spike.angle) * spike.distance;
+        const spikeY = player.y + Math.sin(spike.angle) * spike.distance;
+        
+        // Стрельба кристаллов
+        if (now - spike.lastShot > spike.fireRate && enemies.length > 0) {
+            // Находим ближайшего врага
+            let closestEnemy = null;
+            let closestDistance = Infinity;
+            
+            for (const enemy of enemies) {
+                const dx = spikeX - enemy.x;
+                const dy = spikeY - enemy.y;
+                const distance = dx * dx + dy * dy;
+                if (distance < closestDistance && distance < 90000) { // 300^2
+                    closestDistance = distance;
+                    closestEnemy = enemy;
+                }
+            }
+            
+            if (closestEnemy) {
+                const angle = Math.atan2(closestEnemy.y - spikeY, closestEnemy.x - spikeX);
+                bullets.push({
+                    x: spikeX,
+                    y: spikeY,
+                    radius: 3,
+                    speed: player.bulletSpeed * 0.7,
+                    damage: spike.damage,
+                    angle: angle,
+                    color: '#ff66ff',
+                    splitLevel: 0,
+                    ricochetCount: 0,
+                    piercingCount: 0,
+                    enemiesHit: [],
+                    isCritical: false
+                });
+                spike.lastShot = now;
+                createParticles(spikeX, spikeY, 2, '#ff66ff', 'hit');
+            }
+        }
+    }
+}
+
+// Обновление плазменных шаров
+function updatePlasmaBalls(weapon, deltaTime) {
+    const now = Date.now();
+    
+    for (const ball of plasmaBalls) {
+        ball.angle += ball.rotationSpeed * (deltaTime / 16.67);
+        if (ball.angle > Math.PI * 2) ball.angle -= Math.PI * 2;
+        
+        const ballX = player.x + Math.cos(ball.angle) * ball.distance;
+        const ballY = player.y + Math.sin(ball.angle) * ball.distance;
+        
+        // Стрельба веером
+        if (now - ball.lastShot > ball.fireRate && enemies.length > 0) {
+            const arcAngle = Math.PI / 4; // 45 градусов
+            const projectileCount = Math.min(3 + weapon.level, 8);
+            
+            // Находим ближайшего врага для определения направления
+            let closestEnemy = null;
+            let closestDistance = Infinity;
+            
+            for (const enemy of enemies) {
+                const dx = ballX - enemy.x;
+                const dy = ballY - enemy.y;
+                const distance = dx * dx + dy * dy;
+                if (distance < closestDistance && distance < 160000) { // 400^2
+                    closestDistance = distance;
+                    closestEnemy = enemy;
+                }
+            }
+            
+            if (closestEnemy) {
+                const baseAngle = Math.atan2(closestEnemy.y - ballY, closestEnemy.x - ballX);
+                
+                for (let i = 0; i < projectileCount; i++) {
+                    const spreadAngle = baseAngle + (arcAngle * (i / (projectileCount - 1))) - (arcAngle / 2);
+                    
+                    bullets.push({
+                        x: ballX,
+                        y: ballY,
+                        radius: 4,
+                        speed: player.bulletSpeed * 0.6,
+                        damage: roundNumber(ball.damage * 0.7),
+                        angle: spreadAngle,
+                        color: '#66ffcc',
+                        splitLevel: 0,
+                        ricochetCount: 0,
+                        piercingCount: 0,
+                        enemiesHit: [],
+                        isCritical: false
+                    });
+                }
+                
+                ball.lastShot = now;
+                createParticles(ballX, ballY, 5, '#66ffcc', 'hit');
+            }
+        }
+    }
+}
+
+// Обновление стратегического удара - САМ ВЫБИРАЕТ ЦЕЛЬ
+function updateStrategicStrike(weapon, deltaTime) {
+    const now = Date.now();
+    
+    // Автоматический удар по таймеру
+    if (now - strategicStrikes.lastStrike > strategicStrikes.cooldown) {
+        let bestTarget = null;
+        let bestTargetScore = 0;
+        
+        // Поиск лучшей цели среди всех врагов
+        for (let i = 0; i < enemies.length; i++) {
+            const enemy = enemies[i];
+            
+            // Вычисляем "ценность" цели по нескольким параметрам
+            let targetScore = 0;
+            
+            // 1. Приоритет боссу (если есть)
+            if (bossActive && boss) {
+                targetScore = calculateBossScore(boss);
+                if (targetScore > bestTargetScore) {
+                    bestTargetScore = targetScore;
+                    bestTarget = {
+                        type: 'boss',
+                        x: boss.x,
+                        y: boss.y,
+                        target: boss,
+                        score: targetScore
+                    };
+                }
+            }
+            
+            // 2. Приоритет танкам (большое здоровье)
+            if (enemy.type === 'tank') {
+                targetScore += enemy.maxHealth * 2; // Танки ценнее
+            } else if (enemy.type === 'shooter') {
+                targetScore += enemy.maxHealth * 1.5; // Стрелки ценнее обычных
+            } else {
+                targetScore += enemy.maxHealth; // Обычные враги
+            }
+            
+            // 3. Приоритет врагам с большим текущим здоровьем
+            targetScore += enemy.health * 0.5;
+            
+            // 4. Приоритет врагам, которые близко к игроку (опасность)
+            const dxToPlayer = player.x - enemy.x;
+            const dyToPlayer = player.y - enemy.y;
+            const distanceToPlayer = Math.sqrt(dxToPlayer * dxToPlayer + dyToPlayer * dyToPlayer);
+            targetScore += Math.max(0, 200 - distanceToPlayer); // Ближе = опаснее
+            
+            // 5. Приоритет скоплениям врагов
+            let clusterScore = 0;
+            for (let j = 0; j < enemies.length; j++) {
+                if (i === j) continue;
+                const otherEnemy = enemies[j];
+                const dx = enemy.x - otherEnemy.x;
+                const dy = enemy.y - otherEnemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < 100) { // Враги в радиусе 100 пикселей
+                    clusterScore += 50;
+                }
+            }
+            targetScore += clusterScore;
+            
+            // 6. Штраф за слишком далеких врагов (чтобы не целиться в край экрана)
+            const dxToCenter = canvas.width/2 - enemy.x;
+            const dyToCenter = canvas.height/2 - enemy.y;
+            const distanceToCenter = Math.sqrt(dxToCenter * dxToCenter + dyToCenter * dyToCenter);
+            targetScore -= distanceToCenter * 0.1;
+            
+            // Обновляем лучшую цель
+            if (targetScore > bestTargetScore) {
+                bestTargetScore = targetScore;
+                bestTarget = {
+                    type: 'enemy',
+                    x: enemy.x,
+                    y: enemy.y,
+                    target: enemy,
+                    score: targetScore
+                };
+            }
+        }
+        
+        // Если нашли цель, наносим удар
+        if (bestTarget && bestTargetScore > 50) { // Минимальный порог
+            strategicStrikes.lastStrike = now;
+            
+            // Цель для удара - позиция врага или область с врагами
+            let strikeX = bestTarget.x;
+            let strikeY = bestTarget.y;
+            
+            // Если это скопление врагов, выбираем центр скопления
+            if (bestTarget.type === 'enemy') {
+                const cluster = findEnemyCluster(bestTarget.target);
+                if (cluster.count > 1) {
+                    strikeX = cluster.centerX;
+                    strikeY = cluster.centerY;
+                }
+            }
+            
+            // Визуальный эффект прицеливания
+            showStrategicTarget = true;
+            strategicTargetX = strikeX;
+            strategicTargetY = strikeY;
+            
+            // Показываем тип цели в уведомлении
+            let targetName = "область";
+            if (bestTarget.type === 'boss') {
+                targetName = "БОССА";
+            } else if (bestTarget.target.type === 'tank') {
+                targetName = "ТАНКА";
+            } else if (bestTarget.target.type === 'shooter') {
+                targetName = "СТРЕЛКА";
+            } else if (bestTarget.target.type === 'fast') {
+                targetName = "БЫСТРОГО врага";
+            } else {
+                targetName = "скопление врагов";
+            }
+            
+            showNotification('strategic', `🎯 Цель: ${targetName}`);
+            
+            // Наносим удар через 1 секунду (время прицеливания)
+            setTimeout(() => {
+                executeStrategicStrike(strikeX, strikeY, weapon.level);
+                
+                // Скрываем цель
+                setTimeout(() => {
+                    showStrategicTarget = false;
+                }, 500);
+                
+            }, 1000); // Задержка перед ударом
+        }
+    }
+}
+
+// Вычисление ценности босса как цели
+function calculateBossScore(boss) {
+    if (!boss) return 0;
+    
+    let score = 0;
+    
+    // 1. Босс всегда имеет высокий приоритет
+    score += 5000;
+    
+    // 2. Приоритет боссу с низким здоровьем (добивание)
+    const healthPercent = boss.health / boss.maxHealth;
+    score += (1 - healthPercent) * 2000;
+    
+    // 3. Приоритет боссу близко к игроку
+    const dx = player.x - boss.x;
+    const dy = player.y - boss.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    score += Math.max(0, 300 - distance);
+    
+    // 4. Приоритет боссу в последней фазе
+    if (boss.phase === 3) score += 1000;
+    else if (boss.phase === 2) score += 500;
+    
+    return score;
+}
+
+// Поиск скопления врагов вокруг указанного врага
+function findEnemyCluster(centerEnemy) {
+    let totalX = centerEnemy.x;
+    let totalY = centerEnemy.y;
+    let count = 1;
+    
+    for (const enemy of enemies) {
+        if (enemy === centerEnemy) continue;
+        
+        const dx = centerEnemy.x - enemy.x;
+        const dy = centerEnemy.y - enemy.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < 120) { // Враги в радиусе 120 пикселей
+            totalX += enemy.x;
+            totalY += enemy.y;
+            count++;
+        }
+    }
+    
+    return {
+        centerX: totalX / count,
+        centerY: totalY / count,
+        count: count
+    };
+}
+
+// Выполнение стратегического удара
+function executeStrategicStrike(x, y, weaponLevel) {
+    const explosionRadius = 80 + weaponLevel * 15;
+    const damage = roundNumber(player.damage * 3 * weaponLevel);
+    let totalDamage = 0;
+    let enemiesHit = 0;
+    
+    // Урон по врагам
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        const dx = x - enemy.x;
+        const dy = y - enemy.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < explosionRadius) {
+            const distanceFactor = 1 - (distance / explosionRadius);
+            const actualDamage = roundNumber(damage * distanceFactor);
+            enemy.health -= actualDamage;
+            totalDamage += actualDamage;
+            enemiesHit++;
+            
+            createParticles(enemy.x, enemy.y, 10, '#ff6600');
+            
+            if (enemy.health <= 0) {
+                handleEnemyDeath(enemy, i);
+            }
+        }
+    }
+    
+    // Урон по боссу
+    if (bossActive && boss) {
+        const dx = x - boss.x;
+        const dy = y - boss.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < explosionRadius) {
+            const distanceFactor = 1 - (distance / explosionRadius);
+            const actualDamage = roundNumber(damage * distanceFactor * 0.7);
+            totalDamage += actualDamage;
+            
+            if (boss.shieldActive && boss.shield > 0) {
+                boss.shield -= actualDamage;
+                showNotification('strategic', '💥 Удар по щиту босса!');
+            } else {
+                boss.health -= actualDamage;
+                showNotification('strategic', '💥 Прямое попадание по боссу!');
+            }
+            createParticles(boss.x, boss.y, 20, '#ff6600');
+        }
+    }
+    
+    // Эффект взрыва
+    createParticles(x, y, 50, '#ff6600', 'explosion');
+    
+    // Тряска экрана (сильнее при большем уроне)
+    const shakeIntensity = Math.min(15, Math.floor(totalDamage / 50));
+    startScreenShake(shakeIntensity, 20);
+    
+    // Уведомление о результатах
+    if (enemiesHit > 0 || totalDamage > 0) {
+        showNotification('strategic', `🎯 Удар нанес ${totalDamage} урона по ${enemiesHit} целям`);
+        
+        // Особые уведомления для эффективных ударов
+        if (enemiesHit >= 3) {
+            showNotification('strategic', '🔥 МНОЖЕСТВЕННОЕ ПОРАЖЕНИЕ!');
+        }
+        if (totalDamage > 500) {
+            showNotification('strategic', '💥 МОЩНЫЙ УДАР!');
+        }
+    }
+    
+    if (soundEnabled) {
+        // Играем звук в зависимости от эффективности
+        playStrategicStrikeSound(enemiesHit, totalDamage);
+    }
 }
 
 // Обновление отображения уровня игрока
@@ -2683,6 +4243,7 @@ function updateBossEffects() {
             // Урон от горения каждые 500мс
             if (!player.lastFireTick || now - player.lastFireTick >= 500) {
                 player.health -= 2;
+                startDamageBorderEffect(); // Красный эффект по краям
                 player.lastFireTick = now;
                 createParticles(player.x, player.y, 3, '#ff3300');
                 
@@ -2722,8 +4283,8 @@ function updateShield(deltaTime) {
     
     if (now - player.lastShieldRegen > 1000) {
         if (!shieldActive && player.shield < player.maxShield) {
-            player.shield += player.maxShield * player.shieldRegen;
-            if (player.shield > player.maxShield) player.shield = player.maxShield;
+            player.shield = Math.min(player.maxShield, 
+                player.shield + player.maxShield * player.shieldRegen);
         }
         player.lastShieldRegen = now;
     }
@@ -2836,7 +4397,9 @@ function getNotificationIcon(type) {
         criticalChance: 'crosshairs',
         criticalMultiplier: 'bomb',
         bulletSpeed: 'bullseye',
-        experienceGain: 'chart-line'
+        experienceGain: 'chart-line',
+        refresh: 'sync',
+        money: 'coins'
     };
     
     return icons[type] || 'info-circle';
@@ -2968,9 +4531,6 @@ function updateUpgradeDisplay(type) {
         }
     }
 }
-
-// Упрощенная система управления волнами
-let waveMaxTimer = 10;
 
 // Запуск таймера волн
 function startWaveTimer() {
@@ -3111,11 +4671,29 @@ function gameLoop(currentTime) {
     
     accumulator += deltaTime;
     
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Сначала очищаем canvas с запасом для компенсации тряски
+    const shakeMargin = 50; // Запас в 50 пикселей
+    ctx.clearRect(-shakeMargin, -shakeMargin, canvas.width + shakeMargin * 2, canvas.height + shakeMargin * 2);
+    
+    // Полная заливка черным фоном для гарантированной очистки
+    ctx.fillStyle = '#000011';
+    ctx.fillRect(-shakeMargin, -shakeMargin, canvas.width + shakeMargin * 2, canvas.height + shakeMargin * 2);
+    
+    // Сбрасываем состояние canvas
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.restore();
     
     // Обновляем тряску экрана
     updateScreenShake();
     applyScreenShakeToContainer();
+    
+    // Обновляем эффект красной рамки
+    updateDamageBorderEffect(deltaTime);
     
     drawBackground();
     
@@ -3135,11 +4713,67 @@ function gameLoop(currentTime) {
         drawWeapons();
         drawParticles();
         drawUI();
+        
+        // Рисуем цель стратегического удара
+        if (showStrategicTarget) {
+            drawStrategicTarget();
+        }
     } else {
         drawStars();
     }
     
     requestAnimationFrame(gameLoop);
+}
+
+// Рисование цели стратегического удара
+function drawStrategicTarget() {
+    const time = Date.now() / 1000;
+    const pulse = Math.sin(time * 5) * 5 + 10;
+    
+    // Внешнее кольцо
+    ctx.strokeStyle = '#ff3300';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(strategicTargetX, strategicTargetY, 30 + pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Внутренний круг
+    ctx.fillStyle = 'rgba(255, 100, 0, 0.3)';
+    ctx.beginPath();
+    ctx.arc(strategicTargetX, strategicTargetY, 20, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Перекрестие
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    
+    // Горизонтальная линия
+    ctx.beginPath();
+    ctx.moveTo(strategicTargetX - 25, strategicTargetY);
+    ctx.lineTo(strategicTargetX + 25, strategicTargetY);
+    ctx.stroke();
+    
+    // Вертикальная линия
+    ctx.beginPath();
+    ctx.moveTo(strategicTargetX, strategicTargetY - 25);
+    ctx.lineTo(strategicTargetX, strategicTargetY + 25);
+    ctx.stroke();
+    
+    // Блики
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 4; i++) {
+        const angle = (Math.PI / 2) * i + time * 2;
+        const distance = 35;
+        const blinkX = strategicTargetX + Math.cos(angle) * distance;
+        const blinkY = strategicTargetY + Math.sin(angle) * distance;
+        const blinkSize = Math.sin(time * 10 + i) * 2 + 3;
+        
+        ctx.beginPath();
+        ctx.arc(blinkX, blinkY, blinkSize, 0, Math.PI * 2);
+        ctx.fill();
+    }
 }
 
 // Улучшенное рисование фона
@@ -3166,6 +4800,10 @@ function drawBackground() {
     }
     
     drawStars();
+    
+    // Сброс состояния после отрисовки фона
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
 }
 
 // Улучшенное рисование звезд
@@ -3249,6 +4887,24 @@ function drawPlayer() {
         ctx.stroke();
     }
     
+    // Визуальный эффект неуязвимости
+    if (invulnerable) {
+        const invulnerablePulse = Math.sin(gameTime * 0.3) * 3;
+        ctx.strokeStyle = '#ffff00';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius + 8 + invulnerablePulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Желтое свечение вокруг игрока
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius + 12 + invulnerablePulse, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
     if (shieldActive && player.shield > 0) {
         ctx.strokeStyle = '#4fc3f7';
         ctx.lineWidth = 2;
@@ -3281,9 +4937,9 @@ function drawPlayer() {
         let closestDistance = Infinity;
         
         for (const enemy of enemies) {
-            const distance = Math.sqrt(
-                Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2)
-            );
+            const dx = player.x - enemy.x;
+            const dy = player.y - enemy.y;
+            const distance = dx * dx + dy * dy;
             
             if (distance < closestDistance) {
                 closestDistance = distance;
@@ -3868,8 +5524,38 @@ function drawWeapons() {
             case 'homingMissiles':
                 drawHomingMissiles();
                 break;
+            // Новые оружия:
+            case 'magneticMines':
+                drawMagneticMines();
+                break;
+            case 'lightSabers':
+                drawLightSabers();
+                break;
+            case 'toxicClouds':
+                drawToxicClouds();
+                break;
+            case 'sniperLasers':
+                drawSniperLasers();
+                break;
+            case 'veilOfStars':
+                drawVeilOfStars();
+                break;
+            case 'electricTraps':
+                drawElectricTraps();
+                break;
+            case 'vortexTornadoes':
+                drawVortexTornadoes();
+                break;
+            case 'crystalSpikes':
+                drawCrystalSpikes();
+                break;
+            case 'plasmaBalls':
+                drawPlasmaBalls();
+                break;
         }
     }
+    // Добавляем отрисовку снарядов босса
+    drawBossProjectiles();
 }
 
 // Рисование орбитальных щитов
@@ -3988,29 +5674,85 @@ function drawFireBalls() {
 
 // Рисование ледяных шипов
 function drawIceSpikes() {
+    const now = Date.now();
+    
+    // Рисуем основные шипы как летящие снаряды-шипы
     for (const spike of iceSpikes.activeSpikes) {
-        const age = Date.now() - spike.startTime;
-        const alpha = 1 - (age / 400); // Угасание за 400мс
+        const age = now - spike.startTime;
+        const alpha = Math.max(0, 1 - (age / 5000)); // Угасание за 5 секунд
         
-        ctx.strokeStyle = '#00ccff';
-        ctx.lineWidth = spike.width;
-        ctx.globalAlpha = alpha * 0.8;
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.9;
+        
+        // Рисуем шип как треугольную форму
+        ctx.translate(spike.x, spike.y);
+        ctx.rotate(spike.angle);
+        
+        // Основной шип (треугольник)
+        ctx.fillStyle = '#00ccff';
+        ctx.strokeStyle = '#0099ff';
+        ctx.lineWidth = 2;
         ctx.shadowColor = '#00ccff';
         ctx.shadowBlur = 15;
+        
         ctx.beginPath();
-        ctx.moveTo(spike.startX, spike.startY);
-        ctx.lineTo(spike.endX, spike.endY);
+        ctx.moveTo(spike.length / 2, 0); // Кончик шипа
+        ctx.lineTo(-spike.length / 2, -spike.width / 2); // Левая сторона
+        ctx.lineTo(-spike.length / 4, 0); // Центр задней части
+        ctx.lineTo(-spike.length / 2, spike.width / 2); // Правая сторона
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
         
-        // Кончик шипа
+        // Ледяной блеск на кончике
         ctx.fillStyle = '#ffffff';
-        ctx.globalAlpha = alpha;
+        ctx.shadowBlur = 8;
         ctx.beginPath();
-        ctx.arc(spike.endX, spike.endY, spike.width / 2, 0, Math.PI * 2);
+        ctx.moveTo(spike.length / 2, 0);
+        ctx.lineTo(spike.length / 3, -spike.width / 4);
+        ctx.lineTo(spike.length / 3, spike.width / 4);
+        ctx.closePath();
         ctx.fill();
         
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+    
+    // Рисуем маленькие шипики
+    for (const spike of iceSpikes.secondarySpikes) {
+        const age = now - spike.startTime;
+        const alpha = Math.max(0, 1 - (age / 3000)); // Угасание за 3 секунды
+        
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.8;
+        
+        // Маленький шип как миниатюрный треугольник
+        const angle = Math.atan2(spike.vy, spike.vx);
+        ctx.translate(spike.x, spike.y);
+        ctx.rotate(angle);
+        
+        ctx.fillStyle = '#99ccff';
+        ctx.strokeStyle = '#6699ff';
+        ctx.lineWidth = 1;
+        ctx.shadowColor = '#99ccff';
+        ctx.shadowBlur = 10;
+        
+        ctx.beginPath();
+        ctx.moveTo(spike.length / 2, 0);
+        ctx.lineTo(-spike.length / 2, -spike.width / 2);
+        ctx.lineTo(-spike.length / 4, 0);
+        ctx.lineTo(-spike.length / 2, spike.width / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        
+        // Маленький блеск
+        ctx.fillStyle = '#ccddff';
+        ctx.shadowBlur = 5;
+        ctx.beginPath();
+        ctx.arc(spike.length / 3, 0, spike.width / 3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
     }
 }
 
@@ -4110,30 +5852,404 @@ function drawHomingMissiles() {
     }
 }
 
+// НОВЫЕ ФУНКЦИИ ДЛЯ РИСОВАНИЯ ОРУЖИЙ
+
+// Рисование магнитных мин
+function drawMagneticMines() {
+    for (const mine of magneticMines) {
+        const alpha = mine.life / mine.maxLife;
+        const pulse = Math.sin(Date.now() / 200) * 0.2 + 0.8;
+        
+        // Внешнее кольцо
+        ctx.strokeStyle = `rgba(255, 0, 255, ${alpha * 0.7})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(mine.x, mine.y, mine.radius * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Внутренний круг
+        ctx.fillStyle = `rgba(255, 0, 255, ${alpha * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(mine.x, mine.y, mine.radius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Магнитные линии
+        for (let i = 0; i < 3; i++) {
+            const angle = (Date.now() / 1000) + (Math.PI * 2 / 3) * i;
+            const startX = mine.x + Math.cos(angle) * mine.radius * 0.3;
+            const startY = mine.y + Math.sin(angle) * mine.radius * 0.3;
+            const endX = mine.x + Math.cos(angle) * mine.radius * 0.9;
+            const endY = mine.y + Math.sin(angle) * mine.radius * 0.9;
+            
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+        }
+    }
+}
+
+// Рисование световых клинков
+function drawLightSabers() {
+    for (const saber of lightSabers) {
+        const startX = player.x + Math.cos(saber.angle) * saber.distance;
+        const startY = player.y + Math.sin(saber.angle) * saber.distance;
+        const endX = startX + Math.cos(saber.angle) * saber.length;
+        const endY = startY + Math.sin(saber.angle) * saber.length;
+        
+        // Ядро клинка
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+        
+        // Внешнее свечение
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+        
+        // Рукоять
+        ctx.fillStyle = '#444444';
+        ctx.beginPath();
+        ctx.arc(startX, startY, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// Рисование токсичных облаков
+function drawToxicClouds() {
+    for (const cloud of toxicClouds) {
+        const alpha = cloud.life / cloud.maxLife;
+        
+        // Внешнее облако
+        ctx.fillStyle = `rgba(51, 255, 51, ${alpha * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(cloud.x, cloud.y, cloud.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Внутреннее облако
+        ctx.fillStyle = `rgba(51, 255, 51, ${alpha * 0.1})`;
+        ctx.beginPath();
+        ctx.arc(cloud.x, cloud.y, cloud.radius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Частицы в облаке
+        for (let i = 0; i < 5; i++) {
+            const angle = (Date.now() / 1000) + (Math.PI * 2 / 5) * i;
+            const distance = Math.sin(Date.now() / 500 + i) * cloud.radius * 0.5;
+            const particleX = cloud.x + Math.cos(angle) * distance;
+            const particleY = cloud.y + Math.sin(angle) * distance;
+            const size = 2 + Math.sin(Date.now() / 300 + i) * 1;
+            
+            ctx.fillStyle = `rgba(51, 255, 51, ${alpha * 0.6})`;
+            ctx.beginPath();
+            ctx.arc(particleX, particleY, size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+// Рисование снайперских лазеров
+function drawSniperLasers() {
+    if (sniperLasers.activeTarget) {
+        const chargeTime = Date.now() - sniperLasers.lastShot;
+        const chargePercent = Math.min(chargeTime / 500, 1);
+        
+        // Линия прицеливания
+        ctx.strokeStyle = `rgba(255, 0, 0, ${0.3 + chargePercent * 0.4})`;
+        ctx.lineWidth = 1 + chargePercent * 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y);
+        ctx.lineTo(sniperLasers.activeTarget.x, sniperLasers.activeTarget.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Прицел на цели
+        const pulse = Math.sin(Date.now() / 100) * 5 + 10;
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sniperLasers.activeTarget.x, sniperLasers.activeTarget.y, 10 + pulse * chargePercent, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Заряжающийся круг
+        if (chargePercent < 1) {
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, 20 + chargePercent * 30, 0, Math.PI * 2 * chargePercent);
+            ctx.stroke();
+        }
+    }
+}
+
+// Рисование Вуали звёзд
+function drawVeilOfStars() {
+    if (!veilOfStars.active) return;
+    
+    const now = Date.now();
+    const timeLeft = Math.max(0, veilOfStars.endTime - now);
+    const progress = timeLeft / 2000; // Прогресс 2 секунд
+    
+    // Рисуем вуаль звёзд вокруг игрока
+    ctx.save();
+    ctx.globalAlpha = 0.3 + progress * 0.4; // Пульсирующая прозрачность
+    
+    // Внешний круг
+    const gradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 60);
+    gradient.addColorStop(0, 'rgba(255, 255, 100, 0.8)');
+    gradient.addColorStop(0.5, 'rgba(255, 200, 50, 0.4)');
+    gradient.addColorStop(1, 'rgba(255, 150, 0, 0.1)');
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 60, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Звёздочки
+    ctx.globalAlpha = progress * 0.8;
+    ctx.fillStyle = '#ffff00';
+    for (let i = 0; i < 12; i++) {
+        const angle = (Math.PI * 2 / 12) * i + Date.now() / 500;
+        const distance = 40 + Math.sin(Date.now() / 300 + i) * 10;
+        const x = player.x + Math.cos(angle) * distance;
+        const y = player.y + Math.sin(angle) * distance;
+        const size = 2 + Math.sin(Date.now() / 200 + i * 2) * 1;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Внутреннее свечение
+    ctx.globalAlpha = progress * 0.2;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 25, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+// Рисование электрических ловушек
+function drawElectricTraps() {
+    for (const trap of electricTraps) {
+        const alpha = trap.life / trap.maxLife;
+        const pulse = Math.sin(Date.now() / 300) * 0.2 + 0.8;
+        
+        // Внешний круг
+        ctx.strokeStyle = trap.triggered ? '#ffff00' : `rgba(255, 255, 0, ${alpha * 0.7})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(trap.x, trap.y, trap.radius * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Внутренний узор (треугольник)
+        ctx.fillStyle = trap.triggered ? 'rgba(255, 255, 0, 0.4)' : `rgba(255, 255, 0, ${alpha * 0.3})`;
+        ctx.beginPath();
+        for (let i = 0; i < 3; i++) {
+            const angle = (Math.PI * 2 / 3) * i;
+            const x = trap.x + Math.cos(angle) * trap.radius * 0.5;
+            const y = trap.y + Math.sin(angle) * trap.radius * 0.5;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        // Молнии для активированной ловушки
+        if (trap.triggered) {
+            for (let i = 0; i < 3; i++) {
+                const angle = (Math.PI * 2 / 3) * i + Date.now() / 500;
+                const endX = trap.x + Math.cos(angle) * trap.chainDistance;
+                const endY = trap.y + Math.sin(angle) * trap.chainDistance;
+                
+                ctx.strokeStyle = `rgba(255, 255, 0, ${0.5 + Math.sin(Date.now() / 100) * 0.3})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(trap.x, trap.y);
+                
+                // Зигзагообразная молния
+                const segments = 5;
+                for (let j = 1; j <= segments; j++) {
+                    const progress = j / segments;
+                    const midX = trap.x + (endX - trap.x) * progress + (Math.random() - 0.5) * 20;
+                    const midY = trap.y + (endY - trap.y) * progress + (Math.random() - 0.5) * 20;
+                    ctx.lineTo(midX, midY);
+                }
+                ctx.stroke();
+            }
+        }
+    }
+}
+
+// Рисование вихревых торнадо
+function drawVortexTornadoes() {
+    for (const tornado of vortexTornadoes) {
+        const alpha = tornado.life / tornado.maxLife;
+        
+        // Внешняя спираль
+        ctx.strokeStyle = `rgba(0, 153, 255, ${alpha * 0.8})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(tornado.x, tornado.y, tornado.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Внутренняя спираль
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(tornado.x, tornado.y, tornado.radius * 0.7, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Центральная точка
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(tornado.x, tornado.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Вращающиеся частицы
+        for (let i = 0; i < 8; i++) {
+            const angle = (Date.now() / 200) + (Math.PI * 2 / 8) * i;
+            const distance = tornado.radius * 0.8;
+            const particleX = tornado.x + Math.cos(angle) * distance;
+            const particleY = tornado.y + Math.sin(angle) * distance;
+            
+            ctx.fillStyle = `rgba(0, 204, 255, ${alpha * 0.7})`;
+            ctx.beginPath();
+            ctx.arc(particleX, particleY, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Хвост торнадо
+        const tailLength = 30;
+        const tailAngle = tornado.angle + Math.PI;
+        ctx.strokeStyle = `rgba(0, 153, 255, ${alpha * 0.5})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(tornado.x, tornado.y);
+        ctx.lineTo(
+            tornado.x + Math.cos(tailAngle) * tailLength,
+            tornado.y + Math.sin(tailAngle) * tailLength
+        );
+        ctx.stroke();
+    }
+}
+
+// Рисование кристаллических шипов
+function drawCrystalSpikes() {
+    for (const spike of crystalSpikes) {
+        const spikeX = player.x + Math.cos(spike.angle) * spike.distance;
+        const spikeY = player.y + Math.sin(spike.angle) * spike.distance;
+        const rotation = Date.now() / 1000;
+        
+        // Поворачиваем контекст
+        ctx.save();
+        ctx.translate(spikeX, spikeY);
+        ctx.rotate(rotation);
+        
+        // Кристалл (шестиугольник)
+        ctx.fillStyle = '#ff66ff';
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * 2 / 6) * i;
+            const radius = 6;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Внутренний кристалл
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI * 2 / 6) * i + Math.PI / 6;
+            const radius = 3;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.restore();
+        
+        // Свечение
+        ctx.shadowColor = '#ff66ff';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = 'rgba(255, 102, 255, 0.3)';
+        ctx.beginPath();
+        ctx.arc(spikeX, spikeY, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+}
+
+// Рисование плазменных шаров
+function drawPlasmaBalls() {
+    for (const ball of plasmaBalls) {
+        const ballX = player.x + Math.cos(ball.angle) * ball.distance;
+        const ballY = player.y + Math.sin(ball.angle) * ball.distance;
+        const pulse = Math.sin(Date.now() / 300) * 0.2 + 0.8;
+        
+        // Внешний шар
+        ctx.shadowColor = '#66ffcc';
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = '#66ffcc';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, 8 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Внутренний шар
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Вращающиеся кольца
+        for (let i = 0; i < 2; i++) {
+            const ringAngle = (Date.now() / 1000) + (Math.PI * i);
+            const ringRadius = 12 + Math.sin(Date.now() / 400 + i) * 3;
+            
+            ctx.strokeStyle = `rgba(102, 255, 204, ${0.5 + Math.sin(Date.now() / 200 + i) * 0.3})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(ballX, ballY, ringRadius, ringAngle, ringAngle + Math.PI * 1.5);
+            ctx.stroke();
+        }
+    }
+}
+
 // Улучшенное рисование частиц
 function drawParticles() {
     for (let i = particles.length - 1; i >= 0; i--) {
         const particle = particles[i];
         
-        // Обновление позиции частицы
-        particle.x += particle.speedX;
-        particle.y += particle.speedY;
-        
-        // Применение гравитации
-        if (particle.gravity) {
-            particle.speedY += particle.gravity;
-        }
-        
-        // Замедление
-        particle.speedX *= 0.98;
-        particle.speedY *= 0.98;
-        
-        // Уменьшение жизни
-        particle.life -= 1;
-        
-        // Удаление мертвых частиц
-        if (particle.life <= 0) {
-            particles.splice(i, 1);
+        // Пропускаем частицы за пределами экрана
+        if (particle.x < -100 || particle.x > canvas.width + 100 ||
+            particle.y < -100 || particle.y > canvas.height + 100) {
             continue;
         }
         
@@ -4216,6 +6332,13 @@ function drawUI() {
         ctx.textAlign = 'center';
         ctx.fillText('ЩИТ ПЕРЕЗАРЯЖАЕТСЯ', canvas.width/2, 40);
     }
+    
+    // Финальный сброс состояния canvas для предотвращения артефактов
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // Получить или создать единый AudioContext (оптимизация памяти)
@@ -4526,6 +6649,10 @@ function startGame() {
     player.attackSlowed = false;
     player.attackSlowEndTime = 0;
     
+    // Сброс неуязвимости
+    invulnerable = false;
+    invulnerableEndTime = 0;
+    
     // Сброс улучшений
     for (const key in upgradeSystem) {
         if (key === 'damage') upgradeSystem[key].level = 1;
@@ -4584,11 +6711,30 @@ function startGame() {
     damageWaves = [];
     meteors = [];
     fireBalls = [];
-    iceSpikes = { lastSpike: 0, activeSpikes: [] };
+    iceSpikes = { lastSpike: 0, activeSpikes: [], secondarySpikes: [] };
     homingMissiles = [];
     bulletRings = { lastCast: 0, cooldown: 3000 };
     activeLasers = [];
     activeLightning = [];
+    
+    // Сброс новых оружий
+    magneticMines = [];
+    lightSabers = [];
+    toxicClouds = [];
+    sniperLasers = { lastShot: 0, cooldown: 3000, activeTarget: null };
+    boomerangs = [];
+    electricTraps = [];
+    vortexTornadoes = [];
+    crystalSpikes = [];
+    plasmaBalls = [];
+    strategicStrikes = { lastStrike: 0, cooldown: 5000, targetX: 0, targetY: 0 };
+    showStrategicTarget = false;
+    strategicTargetX = 0;
+    strategicTargetY = 0;
+    
+    // Сброс цены обновления оружия
+    refreshCost = 5;
+    
     weaponSelectionPaused = false;
     
     document.getElementById('notificationsContainer').innerHTML = '';

@@ -833,6 +833,43 @@ body {
     transform: scale(0.95);
 }
 
+.refresh-btn {
+    background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+    color: #ffffff;
+    border: none;
+    padding: 15px 30px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-shadow: 0 4px 15px rgba(255, 152, 0, 0.3);
+}
+
+.refresh-btn:hover {
+    background: linear-gradient(135deg, #f57c00 0%, #e65100 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 152, 0, 0.4);
+}
+
+.refresh-btn:active {
+    transform: translateY(0);
+}
+
+.refresh-btn:disabled {
+    background: linear-gradient(135deg, #666666 0%, #444444 100%);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
 .game-overlay {
     position: absolute;
     top: 0;
@@ -1422,4 +1459,12 @@ body {
     .experience-bar-container {
         bottom: 40px;
     }
+}
+
+/* Добавить в конец файла стилей */
+.weapon-options-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
 }
