@@ -1,17 +1,46 @@
 // Расчёт поглощения урона Вуалью звёзд
-function calculateVeilDamageReduction() {
+function calculateVeilDamageReduction(damage) {
     const veilWeapon = activeWeapons.find(w => w.type === 'veilOfStars');
     if (!veilWeapon) return 0;
     
-    // Начальный процент 8% на 1 уровне, до 99% на 40 уровне
-    const reductionPercent = Math.min(8 + (veilWeapon.level - 1) * 2.3, 99);
-    return reductionPercent / 100;
+    // Базовое поглощение 8% + 5% за каждый уровень (мультипликативно)
+    const baseReduction = 0.08; // 8%
+    const levelMultiplier = Math.pow(1.05, veilWeapon.level - 1); // +5% за уровень
+    
+    const totalReduction = Math.min(baseReduction * levelMultiplier, 0.99);
+    return totalReduction;
 }
 
 // Применение поглощения урона
 function applyVeilDamageReduction(damage) {
-    const reduction = calculateVeilDamageReduction();
+    const veilWeapon = activeWeapons.find(w => w.type === 'veilOfStars');
+    if (!veilWeapon) return damage;
+    
+    // Проверяем 100% поглощение на 10+ уровне
+    if (veilWeapon.level >= 10 && veilOfStars.active) {
+        return 0; // 100% поглощение
+    }
+    
+    const reduction = calculateVeilDamageReduction(damage);
     return damage * (1 - reduction);
+}
+
+// Активация 100% поглощения (уровень 10+)
+function activateVeilFullAbsorption() {
+    const veilWeapon = activeWeapons.find(w => w.type === 'veilOfStars');
+    if (!veilWeapon || veilWeapon.level < 10) return;
+    
+    const now = Date.now();
+    if (now - veilOfStars.lastInvulnerability < veilOfStars.cooldown) return;
+    
+    const duration = 1000 + (veilWeapon.level - 10) * 100; // 1 секунда + 0.1сек за уровень выше 10
+    
+    veilOfStars.active = true;
+    veilOfStars.endTime = now + duration;
+    veilOfStars.lastInvulnerability = now;
+    
+    showNotification('veil', '✨ Вуаль звёзд: 100% защита!');
+    createParticles(player.x, player.y, 20, '#ffff00', 'veil');
 }
 
 // Функция активации красного эффекта при уроне
@@ -144,6 +173,17 @@ let bossActive = false;
 let boss = null;
 let manualShootMode = false; // Режим стрельбы: false = автоматический, true = ручной
 
+// Новая система вселенных и времени
+let universe = 1; // Текущая вселенная (1-5 обычные, 6+ мега)
+let survivalTime = 0; // Время выживания в текущей вселенной (в секундах)
+let isOvertime = false; // Флаг овертайма
+let bossSummonAvailable = false; // Доступность призыва босса
+let bossDefeatedInUniverse = false; // Побежден ли босс в текущей вселенной
+let miniBossSpawnTimer = 0; // Таймер спавна мини-боссов
+let enemySpawnTimer = 0; // Таймер спавна обычных врагов
+let totalGameTime = 0; // Общее время игры для расчета сложности
+let absoluteGameTime = 0; // Абсолютное время игры (не сбрасывается) для опыта
+
 // Система неуязвимости после потери жизни
 let invulnerable = false;
 let invulnerableEndTime = 0;
@@ -265,19 +305,19 @@ let strategicTargetY = 0;
 
 // Система улучшений (добавлены новые улучшения)
 const upgradeSystem = {
-    damage: { level: 1, cost: 100, value: 10, maxLevel: 20, description: "Урон +3" },
-    fireRate: { level: 1, cost: 150, value: 400, maxLevel: 20, description: "Скорострельность +8%" },
-    health: { level: 1, cost: 200, value: 100, maxLevel: 20, description: "Здоровье +20" },
-    movement: { level: 1, cost: 120, value: 4, maxLevel: 15, description: "Скорость +0.3" },
-    shield: { level: 0, cost: 250, value: 0, maxLevel: 10, description: "Щит +15%" },
-    split: { level: 0, cost: 400, value: 0, maxLevel: 3, description: "Разделение пуль" },
-    ricochet: { level: 0, cost: 350, value: 0, maxLevel: 5, description: "Рикошет +1" },
-    piercing: { level: 0, cost: 400, value: 0, maxLevel: 5, description: "Пробивание +1" },
-    lifeSteal: { level: 0, cost: 300, value: 0, maxLevel: 10, description: "Кража жизни +1%" },
-    criticalChance: { level: 0, cost: 400, value: 5, maxLevel: 10, description: "Шанс крита +5%" },
-    criticalMultiplier: { level: 0, cost: 500, value: 2, maxLevel: 5, description: "Множитель крита +0.5" },
-    bulletSpeed: { level: 0, cost: 200, value: 7, maxLevel: 10, description: "Скорость пуль +5%" },
-    experienceGain: { level: 0, cost: 600, value: 1, maxLevel: 5, description: "Опыт +20%" }
+    damage: { level: 1, cost: 100, value: 10, maxLevel: 40, description: "Урон +3" },
+    fireRate: { level: 1, cost: 150, value: 400, maxLevel: 40, description: "Скорострельность +8%" },
+    health: { level: 1, cost: 200, value: 100, maxLevel: 40, description: "Здоровье +20" },
+    movement: { level: 1, cost: 120, value: 4, maxLevel: 40, description: "Скорость +0.3" },
+    shield: { level: 0, cost: 250, value: 0, maxLevel: 40, description: "Щит +15%" },
+    split: { level: 0, cost: 400, value: 0, maxLevel: 40, description: "Разделение пуль" },
+    ricochet: { level: 0, cost: 350, value: 0, maxLevel: 40, description: "Рикошет пуль" },
+    piercing: { level: 0, cost: 400, value: 0, maxLevel: 40, description: "Пробивание пуль" },
+    lifeSteal: { level: 0, cost: 300, value: 0, maxLevel: 40, description: "Кража жизни +5%" },
+    criticalChance: { level: 0, cost: 400, value: 5, maxLevel: 40, description: "Шанс крита +5%" },
+    criticalMultiplier: { level: 0, cost: 500, value: 2, maxLevel: 40, description: "Множитель крита +0.5" },
+    bulletSpeed: { level: 0, cost: 200, value: 7, maxLevel: 40, description: "Скорость пуль +5%" },
+    experienceGain: { level: 0, cost: 600, value: 1, maxLevel: 40, description: "Опыт +20%" }
 };
 
 // Функция для округления чисел
@@ -305,14 +345,6 @@ function initGame() {
     // Запрещаем контекстное меню (ПКМ) на всей странице
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
-    });
-    
-    // Обработчик ПКМ на canvas для переключения режима стрельбы
-    canvas.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        if (gameActive && !gamePaused) {
-            toggleShootMode();
-        }
     });
     
     // Устанавливаем стили для запрета выделения
@@ -405,30 +437,42 @@ function startBossEnemySpawn() {
 function createBoss() {
     bossActive = true;
     
-    // Характеристики босса
-    const bossHealth = 500 + (wave * 100);
-    const bossSpeed = 1.2;
+    // Проверка на финального мегабосса
+    const isMegaBoss = universe > 5 && (universe - 5) % 3 === 0; // Каждый 3-й босс в мегавселенной - финальный
     
-    // Выбираем случайный тип босса
-    const bossType = Math.floor(Math.random() * 3);
-    let color, attackPattern, name;
+    let bossHealth, bossSpeed, bossType, color, attackPattern, name;
     
-    switch(bossType) {
-        case 0: // Огненный босс
-            color = '#ff3300';
-            attackPattern = 'fireRing';
-            name = 'Огненный титан';
-            break;
-        case 1: // Ледяной босс
-            color = '#0099ff';
-            attackPattern = 'iceSpray';
-            name = 'Ледяной колосс';
-            break;
-        case 2: // Токсичный босс
-            color = '#33ff33';
-            attackPattern = 'poisonSpread';
-            name = 'Токсичный монстр';
-            break;
+    if (isMegaBoss) {
+        // Финальный мегабосс
+        bossHealth = 5000 + (universe * 1000);
+        bossSpeed = 1.5;
+        bossType = 3; // Специальный тип для мегабосса
+        color = '#ff00ff';
+        attackPattern = 'megaAttack';
+        name = 'МЕГАБОСС: Хранитель Вселенных';
+    } else {
+        // Обычный босс
+        bossHealth = 10000 + (wave * 200) + (universe * 500) + (totalGameTime / 180); // Усиление со временем
+        bossSpeed = 1.2 + (totalGameTime / 7200); // Усиление скорости со временем
+        bossType = Math.floor(Math.random() * 3);
+        
+        switch(bossType) {
+            case 0: // Огненный босс
+                color = '#ff3300';
+                attackPattern = 'fireRing';
+                name = 'Огненный титан';
+                break;
+            case 1: // Ледяной босс
+                color = '#0099ff';
+                attackPattern = 'iceSpray';
+                name = 'Ледяной колосс';
+                break;
+            case 2: // Токсичный босс
+                color = '#33ff33';
+                attackPattern = 'poisonSpread';
+                name = 'Токсичный монстр';
+                break;
+        }
     }
     
     boss = {
@@ -439,21 +483,21 @@ function createBoss() {
         health: roundNumber(bossHealth),
         maxHealth: roundNumber(bossHealth),
         color: color,
-        damage: 20 + (wave * 3),
+        damage: isMegaBoss ? 50 + (universe * 10) : 20 + (wave * 3) + (universe * 5),
         type: bossType,
         attackPattern: attackPattern,
         name: name,
         lastAttack: 0,
-        attackCooldown: 2000,
+        attackCooldown: isMegaBoss ? 1500 : 2000,
         moveDirectionX: 1,
         moveDirectionY: 1,
         moveTimerX: 0,
         moveTimerY: 0,
-        shield: roundNumber(bossHealth * 0.3),
-        maxShield: roundNumber(bossHealth * 0.3),
+        shield: isMegaBoss ? roundNumber(bossHealth * 0.5) : roundNumber(bossHealth * 0.3),
+        maxShield: isMegaBoss ? roundNumber(bossHealth * 0.5) : roundNumber(bossHealth * 0.3),
         shieldActive: true,
         lastShieldRegen: 0,
-        shieldRegen: 0.01,
+        shieldRegen: isMegaBoss ? 0.02 : 0.01,
         moveTimer: 0,           // Таймер текущего движения
         moveDuration: 0,        // Продолжительность движения в текущем направлении
         moveDistance: 0,        // Дистанция движения
@@ -461,9 +505,16 @@ function createBoss() {
         startX: canvas.width / 2, // Начальная позиция X
         startY: canvas.height / 2, // Начальная позиция Y
         phase: 1,               // Фаза босса (1, 2, 3)
+        isMegaBoss: isMegaBoss  // Флаг мегабосса
     };
     
-    showNotification('boss', `БОСС: ${name}!`);
+    if (isMegaBoss) {
+        boss.radius = 60; // Мегабосс больше
+        showNotification('boss', `${name} появился!`);
+    } else {
+        showNotification('boss', `БОСС: ${name}!`);
+    }
+    
     createBossAppearanceEffect(boss.x, boss.y, boss.color);
     
     // Во время босса всегда ручной режим стрельбы
@@ -968,11 +1019,11 @@ function updateBossProjectiles(deltaTime) {
 // Победа над боссом
 function defeatBoss() {
     // Очки для рекорда
-    const bossRecordPoints = 1000 + (wave * 200);
+    const bossRecordPoints = 1000 + (wave * 200) + (universe * 500);
     score += bossRecordPoints;
     
-    // Валюта для улучшений (уменьшена в 5 раз)
-    const bossMoneyReward = 200 + (wave * 40);
+    // Валюта для улучшений
+    const bossMoneyReward = 200 + (wave * 40) + (universe * 100);
     money += bossMoneyReward;
     
     updateMoney();
@@ -1001,12 +1052,6 @@ function defeatBoss() {
         showNotification('health', `Босс повержен! +${healAmount} HP`);
     }
     
-    if (wave % 20 === 0) {
-        lives++;
-        updateLives();
-        showNotification('life', 'Бонусная жизнь!');
-    }
-    
     showNotification('boss', `БОСС ПОВЕРЖЕН! +${bossRecordPoints} очков`);
     
     // Останавливаем спавн врагов во время босса
@@ -1016,13 +1061,11 @@ function defeatBoss() {
     boss = null;
     bossProjectiles = [];
     
-    // Восстанавливаем таймер волны
-    waveMaxTimer = 12 + Math.floor(wave / 3);
-    waveTimer = waveMaxTimer;
-    updateWaveDisplay();
+    // Устанавливаем флаг что босс побежден в этой вселенной
+    bossDefeatedInUniverse = true;
     
-    // Обновляем отображение режима стрельбы после босса
-    updateShootModeDisplay();
+    // Показываем кнопку перехода в следующую вселенную
+    showNextUniverseButtonAfterBoss();
     
     if (soundEnabled) playBossDefeatSound();
 }
@@ -1054,10 +1097,6 @@ function handleKeyDown(e) {
             break;
         case ' ':
             if (gameActive) togglePause();
-            break;
-        case 'q':
-        case 'Q':
-            skipWaveTimer();
             break;
         case 'Shift':
             activateShield();
@@ -1435,7 +1474,7 @@ function createParticles(x, y, count, color, type = 'explosion') {
 
 // Создание врагов
 function createEnemies(count) {
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count * 5; i++) { // Увеличил количество врагов в 5 раз
         const side = Math.floor(Math.random() * 4);
         let x, y;
         
@@ -1459,61 +1498,53 @@ function createEnemies(count) {
         }
         
         // Базовое HP обычного врага (100%)
-        const baseEnemyHealth = 20 + (wave * 3) + (level * 2);
+        const baseEnemyHealth = 20 + (wave * 3) + (level * 2) + (totalGameTime / 4500); // Усиление со временем (снижено на 20%)
+        const overtimeMultiplier = isOvertime ? 2.5 : 1; // Усиление в овертайме
+        const timeMultiplier = 1 + (totalGameTime / 9000); // Дополнительное усиление каждые 2.5 минут (снижено на 20%)
         const enemyType = Math.random();
         
         if (enemyType < 0.6) {
             // Обычный враг (60%) - 100% HP
-            const speed = 0.8 + wave * 0.06 + level * 0.03;
+            const speed = (0.8 + wave * 0.06 + level * 0.03) * overtimeMultiplier * timeMultiplier;
             const radius = 10 + wave * 0.04;
-            const damage = 4 + wave * 0.4;
-            const enemyHealth = roundNumber(baseEnemyHealth);
+            const damage = (4 + wave * 0.4) * overtimeMultiplier * timeMultiplier;
+            const enemyHealth = roundNumber(baseEnemyHealth * overtimeMultiplier * timeMultiplier);
             
             enemies.push({
                 x: x,
                 y: y,
                 radius: roundNumber(radius),
                 speed: speed,
-                health: enemyHealth,
-                maxHealth: enemyHealth,
-                color: `hsl(${Math.random() * 60 + 300}, 70%, 50%)`,
+                health: roundNumber(enemyHealth),
+                maxHealth: roundNumber(enemyHealth),
+                color: `hsl(${Math.random() * 60 + 0}, 70%, 50%)`,
                 damage: roundNumber(damage),
                 type: 'normal'
             });
         } else if (enemyType < 0.85) {
-            // Быстрый враг (25%) - 50% HP от обычного
-            const speed = 1.5 + wave * 0.1 + level * 0.06;
-            const radius = 7 + wave * 0.025;
-            const damage = 2 + wave * 0.25;
-            const enemyHealth = roundNumber(baseEnemyHealth * 0.5);
-            
+            // Быстрый враг (25%)
             enemies.push({
                 x: x,
                 y: y,
-                radius: roundNumber(radius),
-                speed: speed,
-                health: enemyHealth,
-                maxHealth: enemyHealth,
+                radius: 12,
+                speed: 3 * timeMultiplier,
+                health: roundNumber(baseEnemyHealth * 0.7 * overtimeMultiplier * timeMultiplier),
+                maxHealth: roundNumber(baseEnemyHealth * 0.7 * overtimeMultiplier * timeMultiplier),
                 color: `hsl(${Math.random() * 60 + 180}, 70%, 50%)`,
-                damage: roundNumber(damage),
+                damage: roundNumber((4 + wave * 0.4) * 0.7 * overtimeMultiplier * timeMultiplier),
                 type: 'fast'
             });
         } else if (enemyType < 0.95) {
-            // Танк (10%) - 200% HP от обычного
-            const speed = 0.4 + wave * 0.02 + level * 0.015;
-            const radius = 18 + wave * 0.06;
-            const damage = 8 + wave * 0.6;
-            const enemyHealth = roundNumber(baseEnemyHealth * 3);
-            
+            // Танк (10%)
             enemies.push({
                 x: x,
                 y: y,
-                radius: roundNumber(radius),
-                speed: speed,
-                health: enemyHealth,
-                maxHealth: enemyHealth,
+                radius: 20,
+                speed: 0.8 * timeMultiplier,
+                health: roundNumber(baseEnemyHealth * 1.5 * overtimeMultiplier * timeMultiplier),
+                maxHealth: roundNumber(baseEnemyHealth * 1.5 * overtimeMultiplier * timeMultiplier),
                 color: `hsl(${Math.random() * 60 + 0}, 70%, 50%)`,
-                damage: roundNumber(damage),
+                damage: roundNumber((4 + wave * 0.4) * overtimeMultiplier * timeMultiplier),
                 type: 'tank'
             });
         } else {
@@ -1523,35 +1554,115 @@ function createEnemies(count) {
     }
 }
 
+// Создание мини-босса
+function createMiniBoss() {
+    const types = ['teleport', 'shield', 'explosion', 'regeneration'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    const miniBoss = {
+        x: Math.random() < 0.5 ? -50 : canvas.width + 50,
+        y: Math.random() * (canvas.height - 100) + 50,
+        radius: 25, // Уменьшил с 35 до 25
+        speed: 1.5, // Уменьшил с 2.5 до 1.5
+        health: 150, // Уменьшил с 300 до 150
+        maxHealth: 150,
+        damage: 15, // Уменьшил с 25 до 15
+        color: '#ff00ff',
+        type: type,
+        value: 50, // Уменьшил с 100 до 50
+        lastTeleport: 0,
+        shieldActive: false,
+        shieldEndTime: 0,
+        lastRegeneration: 0
+    };
+    
+    enemies.push(miniBoss);
+    showNotification('enemy', 'Мини-босс появился!');
+}
+
+// Обработка смерти мини-босса
+function handleMiniBossDeath(miniBoss) {
+    // Особые эффекты в зависимости от типа мини-босса
+    switch(miniBoss.type) {
+        case 'teleport':
+            // Телепортация при смерти - взрыв частиц
+            createParticles(miniBoss.x, miniBoss.y, 20, '#ff00ff', 'teleport');
+            break;
+        case 'shield':
+            // Взрыв щита
+            createParticles(miniBoss.x, miniBoss.y, 15, '#00ffff', 'shield');
+            break;
+        case 'explosion':
+            // Взрыв при смерти
+            createParticles(miniBoss.x, miniBoss.y, 30, '#ff6600', 'explosion');
+            // Дополнительный урон игроку если близко
+            const distToPlayer = Math.hypot(player.x - miniBoss.x, player.y - miniBoss.y);
+            if (distToPlayer < 100) {
+                player.health -= 20;
+                showNotification('health', '-20 HP от взрыва!');
+            }
+            break;
+        case 'regeneration':
+            // Исцеляющие частицы
+            createParticles(miniBoss.x, miniBoss.y, 15, '#00ff00', 'heal');
+            break;
+    }
+    
+    showNotification('enemy', 'Мини-босс повержен!');
+}
+
 // Вспомогательная функция для обработки смерти врага
 function handleEnemyDeath(enemy, index) {
     // Очки для рекорда
     let recordPoints = 10 + wave * 1.5;
-    if (enemy.type === 'fast') recordPoints *= 1.3;
-    if (enemy.type === 'tank') recordPoints *= 1.8;
-    if (enemy.type === 'shooter') recordPoints *= 2;
-    score += roundNumber(recordPoints);
-    
-    // Валюта для улучшений
     let moneyReward = 2 + wave * 0.3;
-    if (enemy.type === 'fast') moneyReward *= 1.2;
-    if (enemy.type === 'tank') moneyReward *= 1.5;
-    if (enemy.type === 'shooter') moneyReward *= 1.8;
+    let expGain = 5 * (1 + upgradeSystem.experienceGain.level * 0.2);
+    
+    // Увеличиваем опыт за усиленных врагов со временем
+    const timeBonusMultiplier = 1 + (absoluteGameTime / 1800); // Увеличили в 2 раза для уровня 100
+    expGain *= timeBonusMultiplier;
+    
+    // Дополнительный бонус за овертайм
+    if (isOvertime) {
+        expGain *= 2.5;
+    }
+    
+    if (enemy.type === 'fast') {
+        recordPoints *= 1.3;
+        moneyReward *= 1.2;
+        expGain *= 1.2;
+    } else if (enemy.type === 'tank') {
+        recordPoints *= 1.5;
+        moneyReward *= 1.5;
+        expGain *= 1.5;
+    } else if (enemy.type === 'shooter') {
+        recordPoints *= 1.4;
+        moneyReward *= 1.3;
+        expGain *= 1.3;
+    } else if (enemy.type === 'miniBoss') {
+        // Мини-босс дает больше награды
+        recordPoints = 50 + (universe * 20);
+        moneyReward = 20 + (universe * 10);
+        expGain = 25 + (universe * 10);
+        
+        // Особые эффекты при смерти мини-босса
+        handleMiniBossDeath(enemy);
+    }
+    
+    score += roundNumber(recordPoints);
     money += roundNumber(moneyReward);
+    player.experience += roundNumber(expGain);
     
     updateMoney();
     updateScore();
-    
-    // Получение опыта
-    const expGain = 10 * (1 + upgradeSystem.experienceGain.level * 0.2);
-    player.experience += expGain;
-    updateExperienceBar();
     checkLevelUp();
+    updateExperienceBar();
     
-    createParticles(enemy.x, enemy.y, 10, '#ff9900');
+    // Создание частиц при смерти
+    createParticles(enemy.x, enemy.y, 10, enemy.color, 'explosion');
     
-    // Шанс выпадения ядра здоровья (30%)
-    if (Math.random() < 0.3) {
+    // Шанс выпадения ядра здоровья (30% для обычных, 100% для мини-боссов)
+    if (Math.random() < 0.3 || enemy.type === 'miniBoss') {
         createHealthCore(enemy.x, enemy.y);
     }
     
@@ -1560,11 +1671,195 @@ function handleEnemyDeath(enemy, index) {
     if (soundEnabled) playEnemyDestroySound();
 }
 
+// Обновление отображения вселенной и времени
+function updateUniverseDisplay() {
+    const universeElement = document.getElementById('universe');
+    const timeElement = document.getElementById('survivalTime');
+    
+    if (universeElement) {
+        const universeText = universe <= 5 ? `Вселенная ${universe}` : `Мегавселенная ${universe - 5}`;
+        universeElement.textContent = universeText;
+    }
+    
+    if (timeElement) {
+        const minutes = Math.floor(survivalTime / 3600); // 3600 кадров = 1 минута (60 сек * 60 FPS)
+        const seconds = Math.floor((survivalTime % 3600) / 60); // 60 кадров = 1 секунда
+        timeElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+}
+
+// Показать кнопку перехода в следующую вселенную
+function showNextUniverseButton() {
+    const btn = document.getElementById('nextUniverseBtn');
+    if (btn) {
+        btn.style.display = 'flex';
+        btn.classList.add('pulse');
+        showNotification('wave', 'Переход в следующую вселенную доступен!');
+    }
+}
+
+// Переход в следующую вселенную
+function goToNextUniverse() {
+    const btn = document.getElementById('nextUniverseBtn');
+    if (btn) {
+        btn.style.display = 'none';
+    }
+    
+    if (universe < 5) {
+        universe++;
+        showNotification('wave', `Переход во вселенную ${universe}!`);
+    } else if (universe === 5) {
+        universe = 6; // Мегавселенная
+        showNotification('wave', 'МЕГАВСЕЛЕННАЯ ОТКРЫТА!');
+    } else {
+        // В мегавселенной просто продолжаем
+        showNotification('wave', 'Продолжаем мегавселенную!');
+    }
+    
+    // Сброс времени выживания для новой вселенной
+    survivalTime = 0;
+    isOvertime = false;
+    bossSummonAvailable = false;
+    bossDefeatedInUniverse = false; // Сбрасываем флаг победы над боссом
+    
+    // Скрыть кнопку призыва босса
+    const bossBtn = document.getElementById('bossSummonBtn');
+    if (bossBtn) {
+        bossBtn.style.display = 'none';
+    }
+    
+    // Обновление интерфейса
+    updateUniverseDisplay();
+    
+    // Очищаем врагов для чистого перехода
+    enemies = [];
+    enemyBullets = [];
+    particles = [];
+    
+    // Создаем эффект перехода
+    createUniverseTransitionEffect();
+}
+
+// Создание эффекта перехода между вселенными
+function createUniverseTransitionEffect() {
+    for (let i = 0; i < 100; i++) {
+        const angle = (Math.PI * 2 / 100) * i;
+        const distance = Math.random() * 200 + 100;
+        const px = canvas.width / 2 + Math.cos(angle) * distance;
+        const py = canvas.height / 2 + Math.sin(angle) * distance;
+        
+        particles.push({
+            x: px,
+            y: py,
+            radius: Math.random() * 4 + 2,
+            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+            speedX: -Math.cos(angle) * (Math.random() * 3 + 2),
+            speedY: -Math.sin(angle) * (Math.random() * 3 + 2),
+            life: 120
+        });
+    }
+}
+
+// Показать кнопку призыва босса
+function showBossSummonButton() {
+    const btn = document.getElementById('bossSummonBtn');
+    if (btn) {
+        btn.style.display = 'block';
+        btn.classList.add('pulse');
+        showNotification('boss', 'Босс доступен для призыва!');
+    }
+}
+
+// Показать кнопку перехода в следующую вселенную (если босс побежден)
+function showNextUniverseButtonAfterBoss() {
+    const bossBtn = document.getElementById('bossSummonBtn');
+    const nextBtn = document.getElementById('nextUniverseBtn');
+    
+    if (bossBtn) {
+        bossBtn.style.display = 'none'; // Скрываем кнопку призыва босса
+    }
+    
+    if (nextBtn) {
+        nextBtn.style.display = 'flex';
+        nextBtn.classList.add('pulse');
+        showNotification('wave', 'Переход в следующую вселенную доступен!');
+    }
+}
+
+// Призвать босса
+function summonBoss() {
+    if (!bossSummonAvailable || bossActive) return;
+    
+    bossSummonAvailable = false;
+    const btn = document.getElementById('bossSummonBtn');
+    if (btn) {
+        btn.style.display = 'none';
+    }
+    
+    createBoss();
+    showNotification('boss', 'Босс призван!');
+}
+
+// Обновление системы вселенных
+function updateUniverseSystem() {
+    const minutesInCurrentUniverse = Math.floor(survivalTime / 3600); // 3600 кадров = 1 минута
+    
+    // Проверка на 10 минут для призыва босса (если босс еще не побежден в этой вселенной)
+    if (survivalTime >= 600 * 60 && !bossSummonAvailable && !bossActive && !bossDefeatedInUniverse) { // 10 минут * 60 секунд * 60 FPS
+        bossSummonAvailable = true;
+        showBossSummonButton();
+    }
+    
+    // Проверка на овертайм (если не призван босс в течение 10 минут)
+    if (survivalTime >= 600 * 60 && !bossActive && !isOvertime) {
+        isOvertime = true;
+        showNotification('wave', 'ОВЕРТАЙМ! Враги усилились!');
+    }
+}
+
+// Новая система спавна врагов
+function updateEnemySpawning() {
+    const minutesInCurrentUniverse = Math.floor(survivalTime / 3600); // 3600 кадров = 1 минута
+    const difficultyMultiplier = 1 + (totalGameTime / 3600); // Увеличение сложности каждую минуту
+    
+    // Спавн обычных врагов
+    enemySpawnTimer++;
+    const baseSpawnRate = isOvertime ? 120 : 240; // Каждые 2 секунды в овертайме, 4 секунды обычно (при 60 FPS)
+    const spawnRate = Math.max(60, baseSpawnRate - (minutesInCurrentUniverse * 30)); // Ускорение спавна со временем
+    
+    if (enemySpawnTimer >= spawnRate) {
+        enemySpawnTimer = 0;
+        const enemyCount = isOvertime ? 2 : 1; // Двойной спавн в овертайме
+        createEnemies(enemyCount);
+    }
+    
+    // Спавн мини-боссов
+    miniBossSpawnTimer++;
+    const miniBossRate = isOvertime ? 1800 : 3600; // Каждые 30 секунд в овертайме, 1 минута обычно
+    
+    if (miniBossSpawnTimer >= miniBossRate) {
+        miniBossSpawnTimer = 0;
+        createMiniBoss();
+    }
+}
+
 // Обновление состояния игры
 function updateGame(deltaTime) {
     if (!gameActive || gamePaused || weaponSelectionPaused) return;
     
     gameTime++;
+    totalGameTime++; // Общее время игры
+    absoluteGameTime++; // Абсолютное время игры (не сбрасывается)
+    survivalTime++; // Время в текущей вселенной
+    
+    // Обновление времени и проверка условий
+    updateUniverseSystem();
+    
+    // Новая система спавна врагов
+    updateEnemySpawning();
+    
+    // Обновление интерфейса
+    updateUniverseDisplay();
     
     // Проверяем окончание неуязвимости
     if (invulnerable && Date.now() > invulnerableEndTime) {
@@ -1589,12 +1884,8 @@ function updateGame(deltaTime) {
     if (player.isMoving.left && player.x > player.radius) player.x -= moveSpeed;
     if (player.isMoving.right && player.x < canvas.width - player.radius) player.x += moveSpeed;
     
-    // Стрельба (автоматическая или ручная)
-    // Во время босса всегда ручной режим
-    const currentShootMode = bossActive ? true : manualShootMode;
-    if (!currentShootMode) {
-        autoShoot();
-    }
+    // Стрельба (теперь всегда автоматическая)
+    autoShoot();
     
     // Обновление щита
     updateShield(deltaTime);
@@ -1920,7 +2211,7 @@ function updateGame(deltaTime) {
         
         if (distanceSquared < radiusSum * radiusSum) {
             if (player.health < player.maxHealth) {
-                const healAmount = Math.min(10 + wave * 2, player.maxHealth - player.health);
+                const healAmount = Math.min(20 + (player.playerLevel * 5), player.maxHealth - player.health);
                 player.health += roundNumber(healAmount);
                 
                 showNotification('health', `+${roundNumber(healAmount)} HP`);
@@ -2125,7 +2416,7 @@ function getWeaponData(type) {
         lightSabers: { name: '⚔️ Световые клинки', description: 'Вращающиеся клинки разрубают врагов' },
         toxicClouds: { name: '☁️ Токсичные облака', description: 'Облака замедляют и отравляют врагов' },
         sniperLasers: { name: '🎯 Снайперские лазеры', description: 'Заряженный выстрел по самому сильному врагу' },
-        veilOfStars: { name: '✨ Вуаль звёзд', description: 'Поглощает урон и даёт неуязвимость' },
+        veilOfStars: { name: '✨ Вуаль звёзд', description: '8% поглощение +5% за уровень. На 10+: 100% защита на 1сек (10сек ПЗ)' },
         electricTraps: { name: '⚡ Электрические ловушки', description: 'Ловушки срабатывают при приближении врагов' },
         vortexTornadoes: { name: '🌪️ Вихревые торнадо', description: 'Торнадо отталкивают врагов с пути' },
         crystalSpikes: { name: '💎 Кристаллические шипы', description: 'Кристаллы вращаются и стреляют во врагов' },
@@ -3611,20 +3902,14 @@ function updateSniperLasers(weapon, deltaTime) {
 function updateVeilOfStars(weapon, deltaTime) {
     const now = Date.now();
     
-    // Проверяем и активируем неуязвимость каждые 10 секунд на уровне 10+
-    if (weapon.level >= 10 && now - veilOfStars.lastInvulnerability >= veilOfStars.cooldown) {
-        veilOfStars.lastInvulnerability = now;
-        veilOfStars.active = true;
-        veilOfStars.endTime = now + 2000; // 2 секунды неуязвимости
-        
-        // Показываем уведомление
-        showNotification('shield', '✨ Вуаль звёзд: Неуязвимость на 2 секунды!');
-        createParticles(player.x, player.y, 15, '#ffff00', 'shield');
-    }
-    
-    // Проверяем окончание неуязвимости
+    // Проверяем окончание 100% поглощения
     if (veilOfStars.active && now > veilOfStars.endTime) {
         veilOfStars.active = false;
+    }
+    
+    // Автоматическая активация 100% поглощения на уровне 10+ каждые 10 секунд
+    if (weapon.level >= 10 && now - veilOfStars.lastInvulnerability >= veilOfStars.cooldown) {
+        activateVeilFullAbsorption();
     }
 }
 
@@ -4561,102 +4846,14 @@ function updateUpgradeDisplay(type) {
     }
 }
 
-// Запуск таймера волн
-function startWaveTimer() {
-    clearInterval(waveInterval);
-    
-    waveInterval = setInterval(() => {
-        // Не запускаем новую волну, если босс активен или игра на паузе
-        if (bossActive || gamePaused) return;
-        
-        waveTimer--;
-        updateWaveDisplay();
-        
-        if (waveTimer <= 0) {
-            startWave();
-        }
-    }, 1000);
-}
-
-// Обновление отображения волны
+// Обновление отображения волны (упрощенная версия для совместимости)
 function updateWaveDisplay() {
-    const timerElement = document.getElementById('waveTimer');
     const progressElement = document.getElementById('waveProgress');
-    const skipBtn = document.getElementById('skipWaveBtn');
-    
-    if (timerElement) {
-        timerElement.textContent = Math.max(0, waveTimer);
-    }
     
     if (progressElement) {
-        const progress = ((waveMaxTimer - waveTimer) / waveMaxTimer) * 100;
+        // Показываем прогресс времени в текущей вселенной
+        const progress = (survivalTime % (600 * 60)) / (600 * 60) * 100; // Прогресс в пределах 10 минут
         progressElement.style.width = `${progress}%`;
-    }
-    
-    // Управление кнопкой пропуска
-    if (skipBtn) {
-        skipBtn.disabled = bossActive || gamePaused || waveTimer <= 0;
-        
-        // Добавляем пульсацию если доступно
-        if (!bossActive && !gamePaused && waveTimer > 3) {
-            skipBtn.classList.add('pulse');
-        } else {
-            skipBtn.classList.remove('pulse');
-        }
-    }
-}
-
-// Пропуск таймера волны
-function skipWaveTimer() {
-    if (bossActive || gamePaused || waveTimer <= 0) return;
-    
-    waveTimer = 0;
-    updateWaveDisplay();
-    
-    showNotification('wave', 'Волна начата досрочно!');
-    
-    // Небольшая тряска экрана для эффекта
-    startScreenShake(2, 5);
-}
-
-// Начало волны врагов
-function startWave() {
-    const currentWave = wave + 1; // Следующая волна
-    wave = currentWave;
-    document.getElementById('wave').textContent = wave;
-    
-    // НЕ очищаем врагов никогда - они остаются всегда
-    
-    if (currentWave % 10 === 0) {
-        // Волна босса - добавляем босса к существующим врагам
-        createBoss();
-        waveMaxTimer = 30;
-        document.getElementById('wave').textContent = `Босс ${currentWave/10}`;
-    } else {
-        // Обычная волна - добавляем новых врагов к существующим
-        const enemyCount = 4 + Math.floor(currentWave * 1.5);
-        createEnemies(enemyCount);
-        waveMaxTimer = 12 + Math.floor(currentWave / 3);
-    }
-    
-    // Сбрасываем таймер и отображение
-    waveTimer = waveMaxTimer;
-    updateWaveDisplay();
-    
-    if (currentWave % 10 !== 0) {
-        showNotification('wave', `Волна ${currentWave}!`);
-        
-        // Анимация для заголовка волны
-        const waveTitleElement = document.querySelector('.wave-info h3');
-        if (waveTitleElement) {
-            waveTitleElement.classList.remove('new-wave');
-            void waveTitleElement.offsetWidth; // Trigger reflow
-            waveTitleElement.classList.add('new-wave');
-            
-            setTimeout(() => {
-                waveTitleElement.classList.remove('new-wave');
-            }, 500);
-        }
     }
 }
 
@@ -6696,6 +6893,17 @@ function startGame() {
     bossActive = false;
     boss = null;
     
+    // Новые переменные системы вселенных
+    universe = 1;
+    survivalTime = 0;
+    isOvertime = false;
+    bossSummonAvailable = false;
+    bossDefeatedInUniverse = false;
+    miniBossSpawnTimer = 0;
+    enemySpawnTimer = 0;
+    totalGameTime = 0;
+    absoluteGameTime = 0; // Сбрасываем только при полном рестарте
+    
     player.x = canvas.width / 2;
     player.y = canvas.height / 2;
     player.health = 100;
@@ -6758,9 +6966,23 @@ function startGame() {
     document.getElementById('lives').textContent = lives;
     document.getElementById('wave').textContent = wave;
     document.getElementById('level').textContent = level;
-    document.getElementById('waveTimer').textContent = waveTimer;
     document.getElementById('shield').textContent = '0%';
     document.getElementById('pauseBtn').innerHTML = '<i class="fas fa-pause"></i> Пауза';
+    
+    // Обновление интерфейса вселенной
+    updateUniverseDisplay();
+    
+    // Скрыть кнопку призыва босса при старте
+    const bossBtn = document.getElementById('bossSummonBtn');
+    if (bossBtn) {
+        bossBtn.style.display = 'none';
+    }
+    
+    // Скрыть кнопку перехода при старте
+    const nextUniverseBtn = document.getElementById('nextUniverseBtn');
+    if (nextUniverseBtn) {
+        nextUniverseBtn.style.display = 'none';
+    }
     
     for (const key in upgradeSystem) {
         updateUpgradeDisplay(key);
@@ -6823,7 +7045,8 @@ function startGame() {
     
     createStars();
     
-    startWaveTimer();
+    // Новая система не использует таймер волн
+    // startWaveTimer(); // Удалено
     
     console.log("Игра запущена успешно");
 }
@@ -6918,8 +7141,12 @@ function gameOver() {
         document.getElementById('highScoreValue').textContent = highScore;
     }
     
+    const universeText = universe <= 5 ? `вселенной ${universe}` : `мегавселенной ${universe - 5}`;
+    const timeMinutes = Math.floor(survivalTime / 3600);
+    const timeSeconds = Math.floor((survivalTime % 3600) / 60);
+    
     document.getElementById('overlayTitle').textContent = 'Игра окончена!';
-    document.getElementById('overlayText').textContent = `Вы набрали ${score} очков и дошли до ${wave} волны.`;
+    document.getElementById('overlayText').textContent = `Вы набрали ${score} очков и выжили ${timeMinutes}:${timeSeconds.toString().padStart(2, '0')} в ${universeText}.`;
     document.getElementById('startBtn').innerHTML = '<i class="fas fa-redo"></i> Играть снова';
     document.getElementById('gameOverlay').style.display = 'flex';
 }

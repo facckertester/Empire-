@@ -50,20 +50,14 @@
                         <span> - Движение</span>
                     </div>
                     <div class="control-item" id="shootModeDisplay">
-                        <i class="fas fa-mouse-pointer"></i>
-                        <span> - Автострельба</span>
-                    </div>
-                    <div class="control-item">
-                        <span>Q - Следующая волна</span>
+                        <i class="fas fa-crosshairs"></i>
+                        <span> - Автоматическая стрельба</span>
                     </div>
                     <div class="control-item">
                         <span>Пробел - Пауза</span>
                     </div>
                     <div class="control-item">
                         <span>Shift - Активировать щит</span>
-                    </div>
-                    <div class="control-item">
-                        <span>ПКМ - Ручной выстрел</span>
                     </div>
                 </div>
                 
@@ -89,7 +83,7 @@
                         <h3><i class="fas fa-bolt"></i> Урон</h3>
                         <p>Увеличивает урон от выстрелов</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">1</span>/20</span>
+                            <span>Уровень: <span class="level-value">1</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 100</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('damage')">Улучшить</button>
@@ -99,7 +93,7 @@
                         <h3><i class="fas fa-tachometer-alt"></i> Скорострельность</h3>
                         <p>Увеличивает скорость стрельбы</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">1</span>/20</span>
+                            <span>Уровень: <span class="level-value">1</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 150</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('fireRate')">Улучшить</button>
@@ -109,7 +103,7 @@
                         <h3><i class="fas fa-heart"></i> Здоровье</h3>
                         <p>Увеличивает максимальное здоровье</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">1</span>/20</span>
+                            <span>Уровень: <span class="level-value">1</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 200</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('health')">Улучшить</button>
@@ -119,7 +113,7 @@
                         <h3><i class="fas fa-running"></i> Скорость</h3>
                         <p>Увеличивает скорость движения</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">1</span>/15</span>
+                            <span>Уровень: <span class="level-value">1</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 120</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('movement')">Улучшить</button>
@@ -129,7 +123,7 @@
                         <h3><i class="fas fa-shield-alt"></i> Щит</h3>
                         <p>Увеличивает прочность щита</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 250</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('shield')">Купить/Улучшить</button>
@@ -139,7 +133,7 @@
                         <h3><i class="fas fa-code-branch"></i> Разделение</h3>
                         <p>Пули разделяются при попадании</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/3</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 400</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('split')">Купить/Улучшить</button>
@@ -149,7 +143,7 @@
                         <h3><i class="fas fa-reply-all"></i> Рикошет</h3>
                         <p>Пули отскакивают от врагов</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 350</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('ricochet')">Купить/Улучшить</button>
@@ -159,7 +153,7 @@
                         <h3><i class="fas fa-arrow-right"></i> Пробивание</h3>
                         <p>Пули пробивают нескольких врагов</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 400</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('piercing')">Купить/Улучшить</button>
@@ -170,7 +164,7 @@
                         <h3><i class="fas fa-tint"></i> Кража жизни</h3>
                         <p>Восстанавливает здоровье при убийстве</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 300</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('lifeSteal')">Купить/Улучшить</button>
@@ -180,7 +174,7 @@
                         <h3><i class="fas fa-crosshairs"></i> Шанс крита</h3>
                         <p>Увеличивает шанс критического удара</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 400</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('criticalChance')">Купить/Улучшить</button>
@@ -190,7 +184,7 @@
                         <h3><i class="fas fa-bomb"></i> Сила крита</h3>
                         <p>Увеличивает силу критического удара</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 500</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('criticalMultiplier')">Купить/Улучшить</button>
@@ -200,7 +194,7 @@
                         <h3><i class="fas fa-bullseye"></i> Скорость пуль</h3>
                         <p>Увеличивает скорость полета пуль</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/10</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 200</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('bulletSpeed')">Купить/Улучшить</button>
@@ -210,7 +204,7 @@
                         <h3><i class="fas fa-chart-line"></i> Прирост опыта</h3>
                         <p>Увеличивает получаемый опыт</p>
                         <div class="upgrade-level">
-                            <span>Уровень: <span class="level-value">0</span>/5</span>
+                            <span>Уровень: <span class="level-value">0</span>/40</span>
                             <span class="upgrade-cost">Стоимость: 600</span>
                         </div>
                         <button class="upgrade-btn" onclick="buyUpgrade('experienceGain')">Купить/Улучшить</button>
@@ -219,8 +213,8 @@
                 
                 <div class="game-instructions">
                     <h3><i class="fas fa-info-circle"></i> Как играть</h3>
-                    <p>Игра автоматически стреляет в ближайшего врага. Уклоняйтесь от врагов, используйте Shift для активации щита. Уничтожайте врагов для получения очков и опыта.</p>
-                    <p><strong>Каждые 10 волн появляется БОСС!</strong></p>
+                    <p>Выживайте 10 минут в каждой вселенной! Враги появляются постоянно и усиливаются со временем. Каждую минуту появляются мини-боссы с особыми способностями. После 10 минут можно призвать босса. В овертайме враги становятся сильнее!</p>
+                    <p><strong>5 вселенных + мегавселенная с финальным боссом!</strong></p>
                     <div class="enemy-types">
                         <h4><i class="fas fa-robot"></i> Типы врагов:</h4>
                         <div class="enemy-type">
@@ -239,6 +233,10 @@
                             <span class="enemy-color shooter"></span>
                             <span>Стрелок - стреляет на расстоянии</span>
                         </div>
+                        <div class="enemy-type">
+                            <span class="enemy-color" style="background: #ff00ff;"></span>
+                            <span>Мини-босс - телепорт, щит, взрыв или регенерация</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -246,12 +244,16 @@
         
         <div class="game-footer">
             <div class="wave-info">
-                <h3>Следующая волна через: <span id="waveTimer">10</span> сек. <button id="skipWaveBtn" class="skip-wave-btn" title="Начать следующую волну сразу" onclick="skipWaveTimer()">
-                    <i class="fas fa-forward"></i>
-                </button></h3>
+                <h3>Вселенная: <span id="universe">1</span> | Время: <span id="survivalTime">0:00</span></h3>
                 <div class="wave-progress">
                     <div class="wave-progress-bar" id="waveProgress"></div>
                 </div>
+                <button id="bossSummonBtn" class="boss-summon-btn" style="display: none;" onclick="summonBoss()" title="Призвать босса (доступно после 10 минут)">
+                    <i class="fas fa-dragon"></i> Призвать босса
+                </button>
+                <button id="nextUniverseBtn" class="next-universe-btn" style="display: none;" onclick="goToNextUniverse()" title="Перейти в следующую вселенную">
+                    <i class="fas fa-arrow-right"></i> Следующая вселенная
+                </button>
             </div>
             <div class="game-controls">
                 <button id="pauseBtn" onclick="togglePause()">
@@ -271,7 +273,7 @@
         <div class="game-overlay" id="gameOverlay">
             <div class="overlay-content">
                 <h2 id="overlayTitle">Космический выживальщик</h2>
-                <p id="overlayText">Игра автоматически стреляет в ближайшего врага. Уклоняйтесь от врагов, используйте Shift для активации щита. Уничтожайте врагов для получения очков и опыта. Каждые 10 волн появляется БОСС!</p>
+                <p id="overlayText">Выживайте 10 минут в каждой вселенной! Враги появляются постоянно и усиливаются со временем. Призывайте боссов после 10 минут, переходите между вселенными и сразите финального мегабосса!</p>
                 <button id="startBtn" onclick="startGame()">
                     <i class="fas fa-play"></i> Начать игру
                 </button>
