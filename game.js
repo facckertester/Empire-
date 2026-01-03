@@ -1773,6 +1773,12 @@ function updateGame(deltaTime) {
         const radiusSum = player.radius + bullet.radius;
         
         if (distanceSquared < radiusSum * radiusSum) {
+            // Пропускаем отраженные снаряды при попадании в игрока
+            if (bullet.isReflected) {
+                enemyBullets.splice(i, 1);
+                continue;
+            }
+            
             // Если игрок неуязвим, игнорируем попадание
             if (invulnerable) {
                 enemyBullets.splice(i, 1);
@@ -1814,6 +1820,29 @@ function updateGame(deltaTime) {
             }
             
             enemyBullets.splice(i, 1);
+        }
+        
+        // Проверка столкновения отраженных снарядов с врагами
+        if (bullet.isReflected) {
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                const enemy = enemies[j];
+                const dx = bullet.x - enemy.x;
+                const dy = bullet.y - enemy.y;
+                const distanceSquared = dx * dx + dy * dy;
+                const radiusSum = bullet.radius + enemy.radius;
+                
+                if (distanceSquared < radiusSum * radiusSum) {
+                    enemy.health -= bullet.damage;
+                    createParticles(enemy.x, enemy.y, 5, '#ffff00', 'reflect');
+                    
+                    if (enemy.health <= 0) {
+                        handleEnemyDeath(enemy, j);
+                    }
+                    
+                    enemyBullets.splice(i, 1);
+                    break;
+                }
+            }
         }
     }
     
@@ -2149,7 +2178,7 @@ function initWeapon(type) {
                     angle: (Math.PI * 2 / shieldCount) * i,
                     distance: 35 + weapon.level * 3,
                     radius: 12 + weapon.level,
-                    rotationSpeed: 0.02 + weapon.level * 0.003,
+                    rotationSpeed: 0.04 + weapon.level * 0.005, // Вращение вокруг игрока
                     maxHits: maxHits,
                     currentHits: maxHits,
                     recoveryTime: 5000 - (weapon.level * 200), // Восстановление уменьшается с уровнем
@@ -5370,14 +5399,27 @@ function drawBullets() {
 // Рисование пуль врагов
 function drawEnemyBullets() {
     for (const bullet of enemyBullets) {
-        ctx.fillStyle = bullet.color;
+        if (bullet.isReflected) {
+            // Отраженные снаряды с желтым свечением
+            ctx.shadowColor = '#ffff00';
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = '#ffff00';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+        } else {
+            // Обычные вражеские снаряды
+            ctx.shadowColor = bullet.color;
+            ctx.shadowBlur = 5;
+            ctx.fillStyle = bullet.color;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+        }
+        
         ctx.beginPath();
         ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
         ctx.fill();
-        
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.shadowBlur = 0;
     }
 }
 
@@ -5564,19 +5606,53 @@ function drawOrbitalShields() {
         const shieldX = player.x + Math.cos(shield.angle) * shield.distance;
         const shieldY = player.y + Math.sin(shield.angle) * shield.distance;
         
-        ctx.shadowColor = '#4fc3f7';
-        ctx.shadowBlur = 10;
-        ctx.fillStyle = '#4fc3f7';
-        ctx.globalAlpha = 0.8;
+        // Пропускаем сломанные щиты
+        if (shield.broken) continue;
+        
+        // Цвет зависит от количества оставшихся ударов
+        let shieldColor, alpha;
+        if (shield.currentHits === shield.maxHits) {
+            shieldColor = '#4fc3f7'; // Полный щит - голубой
+            alpha = 0.8;
+        } else if (shield.currentHits === 1 && shield.maxHits === 2) {
+            shieldColor = '#ffaa00'; // Поврежденный щит - оранжевый
+            alpha = 0.6;
+        } else {
+            shieldColor = '#ff4444'; // Критически поврежденный - красный
+            alpha = 0.4;
+        }
+        
+        ctx.shadowColor = shieldColor;
+        ctx.shadowBlur = 15;
+        ctx.fillStyle = shieldColor;
+        ctx.globalAlpha = alpha;
+        
+        // Рисуем щит как сегмент круга (дуга)
         ctx.beginPath();
-        ctx.arc(shieldX, shieldY, shield.radius, 0, Math.PI * 2);
+        const arcStart = shield.angle - 0.45; // Фиксированная ширина сегмента без наложения
+        const arcEnd = shield.angle + 0.45;
+        ctx.arc(shieldX, shieldY, shield.radius, arcStart, arcEnd);
+        ctx.arc(shieldX, shieldY, shield.radius * 0.6, arcEnd, arcStart, true);
+        ctx.closePath();
         ctx.fill();
+        
+        // Внутренняя обводка для эффекта сегмента
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.stroke();
+        
+        // Индикатор отражения на 10 уровне
+        if (shield.hasReflection) {
+            ctx.fillStyle = '#ffff00';
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(shieldX, shieldY, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
         
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
     }
 }
 
