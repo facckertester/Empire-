@@ -278,18 +278,16 @@ export class SpawnSystem {
         
         if (gameTimeMinutes >= 20) {
             // После 20 минут - шанс легендарных
-            return Artifact.getRandomByChance();
+            return Math.random() < 0.05 ? 'legendary' : 
+                   Math.random() < 0.15 ? 'epic' : 
+                   Math.random() < 0.4 ? 'rare' : 'common';
         } else if (gameTimeMinutes >= 10) {
             // После 10 минут - шанс эпических
-            const rand = Math.random();
-            if (rand < 0.1) return Artifact.getRandomByRarity('epic');
-            if (rand < 0.3) return Artifact.getRandomByRarity('rare');
-            return Artifact.getRandomByRarity('common');
+            return Math.random() < 0.1 ? 'epic' : 
+                   Math.random() < 0.3 ? 'rare' : 'common';
         } else {
             // Первые 10 минут - только обычные и редкие
-            return Math.random() < 0.3 ? 
-                Artifact.getRandomByRarity('rare') : 
-                Artifact.getRandomByRarity('common');
+            return Math.random() < 0.3 ? 'rare' : 'common';
         }
     }
     
@@ -360,7 +358,11 @@ export class SpawnSystem {
     
     spawnExperience(enemy) {
         // Создание орбов опыта на месте смерти врага
-        const experienceData = ExperienceOrb.createFromEnemy(enemy);
+        const experienceData = {
+            x: enemy.x,
+            y: enemy.y,
+            value: enemy.experienceValue
+        };
         
         const orb = this.entityManager.createExperienceOrb(
             experienceData.x, 
@@ -451,7 +453,10 @@ export class SpawnSystem {
         const artifactType = type || this.selectArtifactType();
         const spawnPoint = this.selectSpawnPoint();
         
-        return this.entityManager.createArtifact(artifactType, spawnPoint.x, spawnPoint.y);
+        // Создание артефакта с нужным типом
+        const artifact = this.entityManager.createArtifact(artifactType, spawnPoint.x, spawnPoint.y);
+        
+        return artifact;
     }
     
     // Изменение параметров спавна

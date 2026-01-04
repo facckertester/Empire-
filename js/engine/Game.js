@@ -186,6 +186,9 @@ export class Game {
         this.spatialHashing.clear();
         this.entityManager.addToSpatialHashing(this.spatialHashing);
         
+        // Обработка коллизий
+        this.processCollisions();
+        
         // Проверка условий повышения уровня
         this.checkLevelUp();
         
@@ -264,6 +267,33 @@ export class Game {
         this.isPaused = false;
         this.resetGame();
         this.showMainMenu();
+    }
+    
+    processCollisions() {
+        // Настройка коллбэков для системы коллизий
+        this.collisionSystem.setCallbacks({
+            onPlayerHit: (damage, enemy) => {
+                if (this.entityManager.player) {
+                    this.entityManager.player.takeDamage(damage);
+                }
+            },
+            onEnemyHit: (damage, projectile, enemy) => {
+                // Враг получает урон в системе Projectile
+            },
+            onExperienceCollected: (value, orb) => {
+                if (this.entityManager.player) {
+                    this.entityManager.player.experience = (this.entityManager.player.experience || 0) + value;
+                }
+            },
+            onArtifactCollected: (artifact) => {
+                if (this.entityManager.player) {
+                    this.entityManager.player.addArtifact(artifact);
+                }
+            },
+            onProjectileHit: (projectile, target) => {
+                // Обработка попадания снаряда
+            }
+        });
     }
     
     checkLevelUp() {

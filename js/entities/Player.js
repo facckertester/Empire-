@@ -1,4 +1,5 @@
 // Класс игрока
+import { WeaponSystem } from '../systems/WeaponSystem.js';
 export class Player {
     constructor() {
         // Базовые характеристики
@@ -36,6 +37,7 @@ export class Player {
         this.weapons = [];
         this.weaponSlots = 1;
         this.maxWeaponSlots = 6;
+        this.weaponSystem = null;
         
         // Артефакты
         this.artifacts = [];
@@ -44,6 +46,8 @@ export class Player {
         this.invincible = false;
         this.slowed = false;
         this.poisoned = false;
+        this.frozen = false;
+        this.stunned = false;
         this.effects = [];
         
         // Таймеры
@@ -54,6 +58,9 @@ export class Player {
         // Флаги
         this.alive = true;
         this.moving = false;
+        
+        // Уникальный ID
+        this.id = Date.now() + Math.random();
     }
     
     init(characterType) {
@@ -268,6 +275,12 @@ export class Player {
             case 'criticalDamage':
                 this.criticalDamage = 2 + this.abilityValue;
                 break;
+            case 'lifesteal':
+                // Добавляет вампиризм
+                break;
+            case 'critical':
+                this.criticalChance += 0.1;
+                break;
             case 'necromancy':
                 // Обрабатывается при смерти врагов
                 break;
@@ -295,17 +308,13 @@ export class Player {
             return false;
         }
         
-        const weapon = {
-            type: weaponType,
-            level: 1,
-            timer: 0,
-            active: true
-        };
+        // Используем WeaponSystem для добавления оружия
+        if (!this.weaponSystem) {
+            // Создаем WeaponSystem при первом использовании
+            this.weaponSystem = new WeaponSystem(this.entityManager);
+        }
         
-        this.weapons.push(weapon);
-        this.weaponTimers[weaponType] = 0;
-        
-        return true;
+        return this.weaponSystem.addWeapon(this, weaponType);
     }
     
     upgradeWeapon(weaponType) {
@@ -516,8 +525,8 @@ export class Player {
                 this.health *= 1.2;
                 break;
             case 'damage':
-                this.damage *= 1.15;
-                this.baseDamage *= 1.15;
+                this.damage *= (1 + this.abilityValue);
+                this.baseDamage *= (1 + this.abilityValue);
                 break;
             case 'experienceMagnet':
                 this.experienceMagnetRadius *= 1.5;

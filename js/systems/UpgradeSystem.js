@@ -369,7 +369,7 @@ export class UpgradeSystem {
     getCurrentPlayer() {
         // Получение текущего игрока из EntityManager
         // Будет реализовано при интеграции с Game
-        return null; // Временно
+        return window.game?.entityManager?.player || null;
     }
     
     // Получение улучшений по типу

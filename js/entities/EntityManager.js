@@ -5,6 +5,7 @@ import { Projectile } from './Projectile.js';
 import { ExperienceOrb } from './ExperienceOrb.js';
 import { Artifact } from './Artifact.js';
 import { Particle } from './Particle.js';
+import { WeaponSystem } from '../systems/WeaponSystem.js';
 
 export class EntityManager {
     constructor(objectPool) {
@@ -20,6 +21,7 @@ export class EntityManager {
         
         // Системы для обработки сущностей
         this.systems = [];
+        this.weaponSystem = new WeaponSystem(this);
         
         // Очереди для добавления/удаления сущностей
         this.toAdd = {
@@ -43,6 +45,7 @@ export class EntityManager {
         // Обновление игрока
         if (this.player) {
             this.player.update(deltaTime);
+            this.weaponSystem.updateWeapons(deltaTime, this.player);
         }
         
         // Обновление врагов
@@ -68,6 +71,9 @@ export class EntityManager {
         
         // Обработка систем
         this.systems.forEach(system => system.update(this, deltaTime));
+        
+        // Обработка опыта (притяжение к игроку)
+        this.processExperienceCollection();
     }
     
     processAddQueue() {
@@ -241,7 +247,39 @@ export class EntityManager {
         }
     }
     
-    // Методы для запросов сущностей
+    // Обработка опыта (притяжение к игроку)
+    processExperienceCollection() {
+        if (!this.player) return;
+        
+        this.experienceOrbs.forEach(orb => {
+            if (orb.alive && !orb.collected) {
+                orb.magnetize(this.player.x, this.player.y, this.player.experienceMagnetRadius);
+            }
+        });
+    }
+    
+    // Методы для работы с оружием
+    addWeaponToPlayer(weaponType) {
+        if (this.player) {
+            return this.weaponSystem.addWeapon(this.player, weaponType);
+        }
+        return false;
+    }
+    
+    upgradePlayerWeapon(weaponType) {
+        if (this.player) {
+            return this.weaponSystem.upgradeWeapon(this.player, weaponType);
+        }
+        return false;
+    }
+    
+    getPlayerWeaponInfo() {
+        if (this.player) {
+            return this.weaponSystem.getActiveWeapons();
+        }
+        return [];
+    }
+    
     getEnemiesInRadius(x, y, radius) {
         return this.enemies.filter(enemy => {
             const dx = enemy.x - x;
@@ -254,14 +292,6 @@ export class EntityManager {
         return this.projectiles.filter(projectile => {
             const dx = projectile.x - x;
             const dy = projectile.y - y;
-            return Math.sqrt(dx * dx + dy * dy) <= radius;
-        });
-    }
-    
-    getExperienceOrbsInRadius(x, y, radius) {
-        return this.experienceOrbs.filter(orb => {
-            const dx = orb.x - x;
-            const dy = orb.y - y;
             return Math.sqrt(dx * dx + dy * dy) <= radius;
         });
     }
