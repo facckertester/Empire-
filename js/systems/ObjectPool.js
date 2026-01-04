@@ -71,22 +71,27 @@ export class ObjectPool {
     }
     
     createObject(type) {
-        switch (type) {
-            case 'player':
-                return new Player();
-            case 'enemy':
-                return new Enemy();
-            case 'projectile':
-                return new Projectile();
-            case 'experienceOrb':
-                return new ExperienceOrb();
-            case 'artifact':
-                return new Artifact();
-            case 'particle':
-                return new Particle();
-            default:
-                console.warn(`Unknown object type: ${type}`);
-                return null;
+        try {
+            switch (type) {
+                case 'player':
+                    return new Player('survivor'); // Начальный персонаж
+                case 'enemy':
+                    return new Enemy('zombie'); // Начальный тип врага
+                case 'projectile':
+                    return new Projectile();
+                case 'experienceOrb':
+                    return new ExperienceOrb();
+                case 'artifact':
+                    return new Artifact();
+                case 'particle':
+                    return new Particle();
+                default:
+                    console.warn(`Unknown object type: ${type}`);
+                    return null;
+            }
+        } catch (error) {
+            console.error(`Error creating object of type ${type}:`, error);
+            return null;
         }
     }
     
@@ -381,5 +386,26 @@ export class ObjectPool {
         });
         
         return totalBytes;
+    }
+    
+    // Метод для уничтожения ObjectPool
+    destroy() {
+        // Очистка всех пулов
+        this.clearAllPools();
+        
+        // Очистка статистики
+        this.stats = {
+            created: 0,
+            reused: 0,
+            total: 0
+        };
+        
+        // Очистка ссылок
+        this.playerPool = null;
+        this.enemyPool = null;
+        this.projectilePool = null;
+        this.experienceOrbPool = null;
+        this.artifactPool = null;
+        this.particlePool = null;
     }
 }

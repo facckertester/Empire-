@@ -363,4 +363,51 @@ export class EntityManager {
             particles: this.particles.length
         };
     }
+    
+    // Метод для сброса EntityManager
+    reset() {
+        this.clear();
+        
+        // Сброс систем
+        if (this.weaponSystem) {
+            this.weaponSystem.reset();
+        }
+        
+        // Очистка систем
+        this.systems = [];
+    }
+    
+    // Метод для уничтожения EntityManager
+    destroy() {
+        this.clear();
+        
+        if (this.weaponSystem) {
+            this.weaponSystem.destroy();
+        }
+        
+        // Очистка всех ссылок
+        this.objectPool = null;
+        this.weaponSystem = null;
+        this.player = null;
+        this.enemies = [];
+        this.projectiles = [];
+        this.experienceOrbs = [];
+        this.artifacts = [];
+        this.particles = [];
+        this.systems = [];
+        this.toAdd = {
+            enemies: [],
+            projectiles: [],
+            experienceOrbs: [],
+            artifacts: [],
+            particles: []
+        };
+        this.toRemove = {
+            enemies: [],
+            projectiles: [],
+            experienceOrbs: [],
+            artifacts: [],
+            particles: []
+        };
+    }
 }

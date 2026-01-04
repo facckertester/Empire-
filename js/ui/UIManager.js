@@ -739,6 +739,52 @@ export class UIManager {
         return this.currentScreen === 'game';
     }
     
+    // Показ ошибки
+    showError(message) {
+        console.error('UI Error:', message);
+        
+        // Создание элемента ошибки
+        const errorElement = document.createElement('div');
+        errorElement.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(220, 53, 69, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        `;
+        errorElement.innerHTML = `
+            <h3 style="margin: 0 0 10px 0;">❌ Ошибка</h3>
+            <p style="margin: 0;">${message}</p>
+            <button style="
+                margin-top: 15px;
+                padding: 8px 16px;
+                background: white;
+                color: #dc3545;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-weight: bold;
+            " onclick="this.parentElement.remove()">Закрыть</button>
+        `;
+        
+        document.body.appendChild(errorElement);
+        
+        // Автоматическое удаление через 5 секунд
+        setTimeout(() => {
+            if (errorElement.parentElement) {
+                errorElement.remove();
+            }
+        }, 5000);
+    }
+    
     // Очистка
     destroy() {
         // Удаление всех обработчиков событий

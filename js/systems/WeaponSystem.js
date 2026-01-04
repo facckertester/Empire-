@@ -930,6 +930,11 @@ export class WeaponSystem {
         this.resetStats();
     }
     
+    // Сброс системы
+    reset() {
+        this.clear();
+    }
+    
     // Уничтожение
     destroy() {
         this.clear();

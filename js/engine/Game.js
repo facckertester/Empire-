@@ -417,4 +417,102 @@ export class Game {
         const event = new CustomEvent('showGameOver', { detail: stats });
         document.dispatchEvent(event);
     }
+    
+    // Методы для установки систем
+    setSaveSystem(saveSystem) {
+        this.saveSystem = saveSystem;
+    }
+    
+    setGlobalUpgradeSystem(globalUpgradeSystem) {
+        this.globalUpgradeSystem = globalUpgradeSystem;
+    }
+    
+    setLocationSystem(locationSystem) {
+        this.locationSystem = locationSystem;
+    }
+    
+    setAchievementSystem(achievementSystem) {
+        this.achievementSystem = achievementSystem;
+    }
+    
+    setLeaderboardSystem(leaderboardSystem) {
+        this.leaderboardSystem = leaderboardSystem;
+    }
+    
+    // Методы для работы с сохранениями
+    loadGameData() {
+        if (this.saveSystem) {
+            const data = this.saveSystem.getPlayerData();
+            if (data) {
+                // Загрузка данных игрока
+                this.coins = data.player?.coins || 0;
+                this.currentLevel = data.player?.currentLevel || 1;
+            }
+        }
+    }
+    
+    saveGameData() {
+        if (this.saveSystem) {
+            const gameData = {
+                level: this.currentLevel,
+                kills: this.kills,
+                survivalTime: this.survivalTime,
+                coins: this.coins
+            };
+            this.saveSystem.recordGame(this.survivalTime, this.kills, this.experience, this.coins);
+        }
+    }
+    
+    // Метод для обработки изменения размера окна
+    onResize() {
+        if (this.canvas) {
+            this.resizeCanvas();
+        }
+    }
+    
+    // Метод для сброса игры
+    reset() {
+        this.gameState = 'menu';
+        this.currentLevel = 1;
+        this.experience = 0;
+        this.experienceToNextLevel = 10;
+        this.kills = 0;
+        this.coins = 0;
+        this.survivalTime = 0;
+        this.gameTime = 0;
+        
+        if (this.entityManager) {
+            this.entityManager.reset();
+        }
+    }
+    
+    // Метод для уничтожения игры
+    destroy() {
+        this.stop();
+        
+        if (this.entityManager) {
+            this.entityManager.destroy();
+        }
+        
+        if (this.objectPool) {
+            this.objectPool.destroy();
+        }
+        
+        // Очистка ссылок
+        this.canvas = null;
+        this.ctx = null;
+        this.renderer = null;
+        this.inputHandler = null;
+        this.entityManager = null;
+        this.collisionSystem = null;
+        this.spawnSystem = null;
+        this.upgradeSystem = null;
+        this.spatialHashing = null;
+        this.objectPool = null;
+        this.saveSystem = null;
+        this.globalUpgradeSystem = null;
+        this.locationSystem = null;
+        this.achievementSystem = null;
+        this.leaderboardSystem = null;
+    }
 }
