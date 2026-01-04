@@ -6,7 +6,8 @@ export class SaveSystem {
             gameData: 'browserSurvivalGame',
             settings: 'browserSurvivalSettings',
             statistics: 'browserSurvivalStats',
-            achievements: 'browserSurvivalAchievements'
+            achievements: 'browserSurvivalAchievements',
+            leaderboard: 'browserSurvivalLeaderboard'
         };
         
         // Версия формата сохранений
@@ -48,6 +49,22 @@ export class SaveSystem {
             }
         };
         
+        // Данные лидерборда по умолчанию
+        this.defaultLeaderboard = {
+            local: {
+                topKills: [],
+                topSurvival: [],
+                topLevel: [],
+                topCoins: []
+            },
+            global: {
+                topKills: [],
+                topSurvival: [],
+                topLevel: [],
+                topCoins: []
+            }
+        };
+        
         this.defaultSettings = {
             soundEnabled: false,
             particlesEnabled: true,
@@ -59,6 +76,7 @@ export class SaveSystem {
         // Текущие данные
         this.currentData = null;
         this.currentSettings = null;
+        this.currentLeaderboard = null;
         
         // Флаг инициализации
         this.initialized = false;
@@ -79,13 +97,15 @@ export class SaveSystem {
     async loadAll() {
         this.currentData = await this.loadData(this.keys.gameData) || this.createNewSave();
         this.currentSettings = await this.loadData(this.keys.settings) || this.defaultSettings;
+        this.currentLeaderboard = await this.loadData(this.keys.leaderboard) || this.defaultLeaderboard;
         
         // Проверка версии и миграция данных
         await this.migrateData();
         
         return {
             gameData: this.currentData,
-            settings: this.currentSettings
+            settings: this.currentSettings,
+            leaderboard: this.currentLeaderboard
         };
     }
     
@@ -376,6 +396,16 @@ export class SaveSystem {
         // Показ уведомления о достижении
         // Будет реализовано в UI системе
         console.log('Достижение разблокировано:', achievement.name);
+    }
+    
+    // Методы для работы с лидербордом
+    getLeaderboard() {
+        return this.currentLeaderboard || this.defaultLeaderboard;
+    }
+    
+    saveLeaderboard(leaderboard) {
+        this.currentLeaderboard = leaderboard;
+        return this.saveData(this.keys.leaderboard, leaderboard);
     }
     
     // Методы для импорта/экспорта
