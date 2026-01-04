@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Survival Game</title>
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/ui.css">
+    <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+    <div id="app">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- UI Elements -->
+        <div id="ui">
+            <!-- Main Menu -->
+            <div id="mainMenu" class="menu">
+                <h1>Browser Survival Game</h1>
+                <button id="startButton">Начать игру</button>
+                <button id="charactersButton">Персонажи</button>
+                <button id="upgradesButton">Улучшения</button>
+                <button id="achievementsButton">Достижения</button>
+                <button id="settingsButton">Настройки</button>
+            </div>
+            
+            <!-- Character Selection -->
+            <div id="characterMenu" class="menu hidden">
+                <h2>Выбор персонажа</h2>
+                <div id="characterGrid"></div>
+                <button id="backFromCharacters">Назад</button>
+            </div>
+            
+            <!-- Upgrades Menu -->
+            <div id="upgradesMenu" class="menu hidden">
+                <h2>Глобальные улучшения</h2>
+                <div id="upgradeGrid"></div>
+                <div id="coinsDisplay">Монеты: <span id="coinsAmount">0</span></div>
+                <button id="backFromUpgrades">Назад</button>
+            </div>
+            
+            <!-- Game HUD -->
+            <div id="gameHUD" class="hud hidden">
+                <div id="healthBar">
+                    <div id="healthFill"></div>
+                    <span id="healthText">100/100</span>
+                </div>
+                <div id="experienceBar">
+                    <div id="experienceFill"></div>
+                    <span id="experienceText">Уровень 1</span>
+                </div>
+                <div id="timer">Время: 00:00</div>
+                <div id="kills">Убийства: 0</div>
+                <div id="weaponSlots"></div>
+                <div id="artifacts"></div>
+            </div>
+            
+            <!-- Pause Menu -->
+            <div id="pauseMenu" class="menu hidden">
+                <h2>Пауза</h2>
+                <button id="resumeButton">Продолжить</button>
+                <button id="restartButton">Начать заново</button>
+                <button id="mainMenuButton">Главное меню</button>
+            </div>
+            
+            <!-- Level Up Screen -->
+            <div id="levelUpScreen" class="menu hidden">
+                <h2>Выберите улучшение</h2>
+                <div id="upgradeChoices"></div>
+            </div>
+            
+            <!-- Game Over Screen -->
+            <div id="gameOverScreen" class="menu hidden">
+                <h2>Игра окончена</h2>
+                <div id="finalStats"></div>
+                <button id="retryButton">Попробовать снова</button>
+                <button id="mainMenuFromGameOver">Главное меню</button>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
