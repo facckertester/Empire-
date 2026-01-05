@@ -739,6 +739,77 @@ export class UIManager {
         return this.currentScreen === 'game';
     }
     
+    // Методы для установки систем
+    setSaveSystem(saveSystem) {
+        this.saveSystem = saveSystem;
+    }
+    
+    setGlobalUpgradeSystem(globalUpgradeSystem) {
+        this.globalUpgradeSystem = globalUpgradeSystem;
+    }
+    
+    setLocationSystem(locationSystem) {
+        this.locationSystem = locationSystem;
+    }
+    
+    setAchievementSystem(achievementSystem) {
+        this.achievementSystem = achievementSystem;
+    }
+    
+    setLeaderboardSystem(leaderboardSystem) {
+        this.leaderboardSystem = leaderboardSystem;
+    }
+    
+    // Метод для обновления лидерборда
+    updateLeaderboard() {
+        if (this.leaderboardSystem) {
+            const leaderboard = this.leaderboardSystem.getAllLeaderboards();
+            // Обновление UI лидерборда
+            console.log('Leaderboard updated:', leaderboard);
+        }
+    }
+    
+    // Метод для показа уведомления о достижении
+    showAchievementNotification(achievement) {
+        console.log('Achievement unlocked:', achievement);
+        
+        // Создание элемента уведомления
+        const notificationElement = document.createElement('div');
+        notificationElement.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            text-align: left;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease-out;
+        `;
+        notificationElement.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">🏆</span>
+                <div>
+                    <div style="font-weight: bold; margin-bottom: 2px;">Достижение разблокировано!</div>
+                    <div style="opacity: 0.9;">${achievement.name || 'Новое достижение'}</div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(notificationElement);
+        
+        // Автоматическое удаление через 3 секунды
+        setTimeout(() => {
+            if (notificationElement.parentElement) {
+                notificationElement.remove();
+            }
+        }, 3000);
+    }
+    
     // Показ ошибки
     showError(message) {
         console.error('UI Error:', message);

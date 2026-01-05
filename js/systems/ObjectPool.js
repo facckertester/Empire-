@@ -61,6 +61,15 @@ export class ObjectPool {
         const pool = this.getPool(type);
         const maxSize = this.maxPoolSizes[type];
         
+        // Инициализация статистики если нужно
+        if (!this.stats) {
+            this.stats = {
+                created: 0,
+                reused: 0,
+                total: 0
+            };
+        }
+        
         for (let i = 0; i < count && pool.length < maxSize; i++) {
             const object = this.createObject(type);
             if (object) {
@@ -134,6 +143,15 @@ export class ObjectPool {
     
     getObject(type) {
         const pool = this.getPool(type);
+        
+        // Инициализация статистики если нужно
+        if (!this.stats) {
+            this.stats = {
+                created: 0,
+                reused: 0,
+                total: 0
+            };
+        }
         
         if (pool.length > 0) {
             const object = pool.pop();
